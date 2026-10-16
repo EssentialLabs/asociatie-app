@@ -1,0 +1,1 @@
+{"timestamp":"2026-10-16T19:28:20.986Z","platforma":"telemetry-startup-verify","severity":"INFO","method":"SYSTEM","url":"/startup","status":null,"asociatie_id":null,"user":null,"mesaj":"Sistem de telemetrie inițializat și verificat (salvare automată în logs/telemetry-errors.jsonl și .log).","stack":"","context":null}

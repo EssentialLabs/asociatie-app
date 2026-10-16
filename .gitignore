@@ -1,0 +1,10 @@
+node_modules/
+asociatie.db
+asociatie.db-wal
+asociatie.db-shm
+*.tmp.db
+temp_conn_*.db
+.env
+
+.agents/
+

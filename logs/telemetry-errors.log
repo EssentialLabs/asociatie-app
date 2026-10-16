@@ -1,0 +1,6 @@
+# ORHIDEEA Telemetry & Error Log
+# Initialized: 2026-10-16T19:28:20.985Z
+
+[2026-10-16T19:28:20.986Z] [INFO] [telemetry-startup-verify] SYSTEM /startup
+  Mesaj: Sistem de telemetrie inițializat și verificat (salvare automată în logs/telemetry-errors.jsonl și .log).
+--------------------------------------------------------------------------------
