@@ -8,3 +8,6 @@ temp_conn_*.db
 
 .agents/
 
+
+test_*.db*
+
