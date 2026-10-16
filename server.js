@@ -38,7 +38,7 @@ app.use('/api', apiErrorTelemetryMiddleware(resolveServerDb));
 app.use('/api', apiRouter);
 
 function resolveTargetAsociatie(db, req) {
-  const targetId = Number(req.asociatieId || 1);
+  const targetId = Number(req?.asociatieId || req?.user?.asociatie_id || req?.query?.asociatie_id || req?.body?.asociatie_id || 1);
   return (
     db.prepare('SELECT * FROM asociatie WHERE id = ?').get(targetId) ||
     db.prepare('SELECT * FROM asociatie ORDER BY id LIMIT 1').get() ||
@@ -472,7 +472,7 @@ app.post('/api/blocuri/:id/repartizeaza-diferente-apa', (req, res) => {
   const tarif = (bloc.tarif_apa_rece || 8.5) + (bloc.tarif_canal || 4.0);
   const valoareTotala = Math.max(0, Math.round(difMc * tarif * 100) / 100);
 
-  const asoc = db.prepare('SELECT luna_lucru, an_lucru FROM asociatie LIMIT 1').get();
+  const asoc = resolveTargetAsociatie(db, req);
   const luna = asoc ? asoc.luna_lucru : 9;
   const an = asoc ? asoc.an_lucru : 2026;
 
@@ -550,11 +550,11 @@ app.post('/api/blocuri/:id/repartizeaza-diferente-apa', (req, res) => {
 //  LISTA DE PLATĂ LUNARĂ (AVIZIER DE SCARĂ / ECHIVALENT LAR.PRG)
 // ============================================================
 app.get('/api/blocuri/:id/lista-plata', (req, res) => {
-  const db = getDb();
+  const db = resolveServerDb(req);
   const bloc = db.prepare('SELECT * FROM blocuri WHERE id = ?').get(req.params.id);
   if (!bloc) return res.status(404).json({ error: 'Bloc negăsit' });
 
-  const asoc = db.prepare('SELECT * FROM asociatie LIMIT 1').get() || {};
+  const asoc = resolveTargetAsociatie(db, req);
   const luna = req.query.luna ? parseInt(req.query.luna) : (asoc.luna_lucru || 9);
   const an = req.query.an ? parseInt(req.query.an) : (asoc.an_lucru || 2026);
 
@@ -755,7 +755,7 @@ app.post('/api/chitante', (req, res) => {
   `).get(apartament_id);
   if (!ap) return res.status(404).json({ error: 'Apartament negăsit' });
 
-  const asoc = db.prepare('SELECT * FROM asociatie LIMIT 1').get() || {};
+  const asoc = resolveTargetAsociatie(db, req);
   const serie = asoc.serie_chitante || 'ORH';
   const numar = asoc.urmatorul_numar_chitanta || 1;
   const dataDoc = data_emiterii || new Date().toISOString().split('T')[0];
@@ -804,7 +804,7 @@ app.post('/api/chitante', (req, res) => {
     .run(Math.round(noiPenalizari * 100) / 100, Math.round(noiRestante * 100) / 100, ap.id);
 
   // Incrementează următorul număr chitanță
-  db.prepare('UPDATE asociatie SET urmatorul_numar_chitanta = ? WHERE id = 1').run(numar + 1);
+  db.prepare('UPDATE asociatie SET urmatorul_numar_chitanta = ? WHERE id = ?').run(numar + 1, asoc.id || 1);
 
   const chitantaCreata = db.prepare('SELECT * FROM chitante WHERE id = ?').get(ins.lastInsertRowid);
   res.json({ success: true, chitanta: chitantaCreata });
@@ -827,8 +827,8 @@ app.post('/api/chitante/:id/anuleaza', (req, res) => {
 //  SFÂRȘIT DE LUNĂ / TRECERE LUNA URMATOARE (ECHIVALENT SLU.PRG)
 // ============================================================
 app.post('/api/luna/inchide', (req, res) => {
-  const db = getDb();
-  const asoc = db.prepare('SELECT * FROM asociatie LIMIT 1').get() || {};
+  const db = resolveServerDb(req);
+  const asoc = resolveTargetAsociatie(db, req);
   const lunaCurenta = asoc.luna_lucru || 9;
   const anCurent = asoc.an_lucru || 2026;
 
@@ -879,7 +879,7 @@ app.post('/api/luna/inchide', (req, res) => {
       noulAn += 1;
     }
 
-    db.prepare('UPDATE asociatie SET luna_lucru = ?, an_lucru = ? WHERE id = 1').run(nouaLuna, noulAn);
+    db.prepare('UPDATE asociatie SET luna_lucru = ?, an_lucru = ? WHERE id = ?').run(nouaLuna, noulAn, asoc.id || 1);
     return { nouaLuna, noulAn };
   });
 

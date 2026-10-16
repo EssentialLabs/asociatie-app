@@ -21,6 +21,8 @@ const { getDb } = require('../db');
 const { LUNI_RO, getAssociationLedgerSummary } = require('../services/ledger');
 const { getLastDayOfMonthIso } = require('../services/lifecycle');
 const { createAssociationWorkspace, logAudit } = require('../services/auth');
+const { calculatePenalties } = require('../services/penalties');
+const { round2 } = require('../engine/round');
 
 function resolveDb(req) {
   return req.app?.locals?.db || getDb();
@@ -31,7 +33,7 @@ function resolveAsociatie(db, req) {
   return (
     db.prepare('SELECT * FROM asociatie WHERE id = ?').get(targetId) ||
     db.prepare('SELECT * FROM asociatie ORDER BY id LIMIT 1').get() ||
-    { id: 1, nume: 'ORHIDEEA', luna_lucru: 9, an_lucru: 2026 }
+    { id: 1, nume: 'ASOCIATIA TEST', luna_lucru: 9, an_lucru: 2026 }
   );
 }
 
@@ -600,7 +602,7 @@ router.post('/casa', (req, res) => {
         INSERT INTO casa (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      .run(activePer?.id || null, asoc.nume || 'ORHIDEEA', document, data, suma, tip, actPas, explicatie);
+      .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, tip, actPas, explicatie);
 
     const entry = db.prepare('SELECT * FROM casa WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json({ success: true, id: Number(info.lastInsertRowid), entry });
@@ -673,7 +675,7 @@ router.post('/banca', (req, res) => {
         INSERT INTO banca (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      .run(activePer?.id || null, asoc.nume || 'ORHIDEEA', document, data, suma, tip, actPas, explicatie);
+      .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, tip, actPas, explicatie);
 
     const entry = db.prepare('SELECT * FROM banca WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json({ success: true, id: Number(info.lastInsertRowid), entry });
@@ -736,7 +738,7 @@ router.post('/patrimoniu', (req, res) => {
         INSERT INTO patrimoniu (perioada_id, asoc, document, data, suma, act_pas, explicatie, perioada, data_pres)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      .run(activePer?.id || null, asoc.nume || 'ORHIDEEA', document, data, suma, actPas, explicatie, perioada, dataPres);
+      .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, actPas, explicatie, perioada, dataPres);
 
     const entry = db.prepare('SELECT * FROM patrimoniu WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json({ success: true, id: Number(info.lastInsertRowid), entry });
@@ -844,7 +846,7 @@ router.post('/ordine-plata', (req, res) => {
       );
 
     const ordin = db.prepare('SELECT * FROM ordine_plata WHERE id = ?').get(info.lastInsertRowid);
-    res.status(201).json({ success: true, id: Number(info.lastInsertRowid), ordin });
+    res.status(201).json({ success: true, id: Number(info.lastInsertRowid), ordin, entry: ordin });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -938,6 +940,107 @@ router.get('/admin/integrity', (req, res) => {
       orphan_payments: orphanPayments,
       ledger_summary: ledgerSummary
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+//  12. ADEVERINȚĂ PLATĂ LA ZI / VÂNZARE APARTAMENT (ADE.PRG)
+// ============================================================
+router.get('/apartamente/:id/adeverinta', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const aptId = Number(req.params.id);
+    const apt = db
+      .prepare(`
+        SELECT a.*, b.bloc, b.strada, b.numar, b.asociatie_id
+        FROM apartamente a
+        JOIN blocuri b ON b.id = a.bloc_id
+        WHERE a.id = ?
+      `)
+      .get(aptId);
+
+    if (!apt) {
+      return res.status(404).json({ error: 'Apartamentul nu a fost găsit.' });
+    }
+
+    const asoc = db.prepare('SELECT * FROM asociatie WHERE id = ?').get(apt.asociatie_id || 1) || {};
+    const dataInr = String(req.query.data_inr || new Date().toISOString().slice(0, 10));
+    const nrInr = Number(req.query.nr_inr || (apt.numar_apart * 10 + 1));
+    const serv = String(req.query.serv || 'NOTAR PUBLIC, VANZARE APARTAMENT');
+
+    // Calculate all unpaid principal
+    const debtRows = db
+      .prepare(`
+        SELECT d.*,
+               COALESCE((SELECT SUM(suma) FROM plati WHERE datorie_id = d.id), 0) AS achitat
+        FROM datorii d
+        WHERE d.apartament_id = ?
+      `)
+      .all(aptId);
+
+    let restantaCurenta = 0;
+    let restantaR = 0;
+    let restantaF = 0;
+    let restantaA = 0;
+    let restantaP = 0;
+
+    for (const d of debtRows) {
+      const rest = round2(Number(d.valoare || 0) - Number(d.achitat || 0));
+      if (rest > 0) {
+        restantaCurenta = round2(restantaCurenta + rest);
+        if (d.categorie === 'R') restantaR = round2(restantaR + rest);
+        else if (d.categorie === 'F') restantaF = round2(restantaF + rest);
+        else if (d.categorie === 'A') restantaA = round2(restantaA + rest);
+        else if (d.categorie === 'P') restantaP = round2(restantaP + rest);
+      }
+    }
+
+    // On-demand calculated penalties up to dataInr
+    const penCalc = calculatePenalties(db, aptId, dataInr);
+    const penalitatiCalculate = round2(penCalc.total_penalizare || 0);
+    const totalDatorat = round2(restantaCurenta + penalitatiCalculate);
+    const areDatorii = totalDatorat > 0;
+
+    const adeverinta = {
+      asociatie: {
+        nume: asoc.nume || 'ASOCIATIA DE PROPRIETARI',
+        cod_fiscal: asoc.cod_fiscal || '',
+        adresa: asoc.adresa || '',
+        oras: 'Alba Iulia',
+        banca: asoc.banca || '',
+        cont_bancar: asoc.cont_bancar || '',
+        presedinte: asoc.presedinte || 'PRESEDINTE ASOCIATIE',
+        administrator: asoc.administrator || 'ADMINISTRATOR'
+      },
+      apartament: {
+        id: apt.id,
+        numar: apt.numar_apart,
+        proprietar: apt.nume_proprietar,
+        bloc: apt.bloc,
+        strada: apt.strada || 'Strada Principală',
+        numar_imobil: apt.numar || ''
+      },
+      numar_inregistrare: nrInr,
+      data_inregistrarii: dataInr,
+      serviciu: serv,
+      are_datorii: areDatorii,
+      defalcare_datorii: {
+        intretinere_regie: restantaR,
+        fond_rulment: restantaF,
+        fond_reparatii: restantaA,
+        penalitati_inregistrate: restantaP,
+        penalitati_calculate: penalitatiCalculate,
+        total_datorat: totalDatorat
+      },
+      text_adeverinta: areDatorii
+        ? `Prin prezenta se adeverește că domnul/doamna ${apt.nume_proprietar}, domiciliat(ă) în ${apt.strada || ''} nr. ${apt.numar || ''}, bl. ${apt.bloc}, ap. ${apt.numar_apart}, înregistrează către Asociația de Proprietari ${asoc.nume || ''} debite restante în sumă totală de ${totalDatorat.toFixed(2)} RON (din care regie/întreținere: ${restantaR.toFixed(2)} RON, fond rulment: ${restantaF.toFixed(2)} RON, fond reparații: ${restantaA.toFixed(2)} RON, penalități: ${(restantaP + penalitatiCalculate).toFixed(2)} RON).`
+        : `Prin prezenta se adeverește că domnul/doamna ${apt.nume_proprietar}, domiciliat(ă) în ${apt.strada || ''} nr. ${apt.numar || ''}, bl. ${apt.bloc}, ap. ${apt.numar_apart}, nu are datorii la plata cheltuielilor de întreținere și a fondurilor către Asociația de Proprietari ${asoc.nume || ''} din care face parte imobilul. Menționăm că apa rece potabilă și gunoiul menajer pentru acest apartament se plătesc prin Asociația de Proprietari și nu sunt restanțe la plata acestor utilități.`,
+      scop: `Se eliberează prezenta pentru a-i servi proprietarului la: ${serv}.`
+    };
+
+    res.json({ success: true, adeverinta });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

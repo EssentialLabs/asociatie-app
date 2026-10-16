@@ -76,7 +76,7 @@ function initializeSchema(database) {
       creat_la DATETIME DEFAULT CURRENT_TIMESTAMP,
       inchis_la DATETIME,
       inchis_de TEXT,
-      CONSTRAINT uq_perioade_an_luna UNIQUE(an, luna)
+      CONSTRAINT uq_perioade_an_luna UNIQUE(asociatie_id, an, luna)
     );
 
     -- 3. General (Monthly General Settings & Tariffs)
@@ -439,7 +439,7 @@ function initializeSchema(database) {
     CREATE TABLE IF NOT EXISTS asociatie_luna (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       perioada_id INTEGER NOT NULL REFERENCES perioade(id) ON DELETE CASCADE,
-      asoc TEXT DEFAULT 'ORHIDEEA',
+      asoc TEXT DEFAULT 'ASOCIATIA TEST',
       apa_rece REAL DEFAULT 0, can_met REAL DEFAULT 0, apa_calda REAL DEFAULT 0, etac REAL DEFAULT 0, incalzire REAL DEFAULT 0,
       gunoi REAL DEFAULT 0, ch_admin REAL DEFAULT 0, sal_tesa REAL DEFAULT 0, sal_feme REAL DEFAULT 0,
       abonament REAL DEFAULT 0, ch_sediu REAL DEFAULT 0, rulment REAL DEFAULT 0,
@@ -457,7 +457,7 @@ function initializeSchema(database) {
     CREATE TABLE IF NOT EXISTS casa (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       perioada_id INTEGER REFERENCES perioade(id) ON DELETE SET NULL,
-      asoc TEXT DEFAULT 'ORHIDEEA',
+      asoc TEXT DEFAULT 'ASOCIATIA TEST',
       document TEXT DEFAULT '',
       data TEXT NOT NULL,
       suma REAL NOT NULL,
@@ -472,7 +472,7 @@ function initializeSchema(database) {
     CREATE TABLE IF NOT EXISTS banca (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       perioada_id INTEGER REFERENCES perioade(id) ON DELETE SET NULL,
-      asoc TEXT DEFAULT 'ORHIDEEA',
+      asoc TEXT DEFAULT 'ASOCIATIA TEST',
       document TEXT DEFAULT '',
       data TEXT NOT NULL,
       suma REAL NOT NULL,
@@ -487,7 +487,7 @@ function initializeSchema(database) {
     CREATE TABLE IF NOT EXISTS patrimoniu (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       perioada_id INTEGER REFERENCES perioade(id) ON DELETE SET NULL,
-      asoc TEXT DEFAULT 'ORHIDEEA',
+      asoc TEXT DEFAULT 'ASOCIATIA TEST',
       document TEXT DEFAULT '',
       data TEXT DEFAULT '',
       suma REAL NOT NULL DEFAULT 0,
@@ -625,6 +625,51 @@ function migrateExistingTables(d) {
       }
     }
   };
+
+  // 1a. Check and fix perioade table unique constraint to support multi-tenancy (asociatie_id, an, luna)
+  try {
+    const pIndexes = d.prepare("PRAGMA index_list('perioade')").all();
+    let needsPerioadeMigration = false;
+    for (const idx of pIndexes) {
+      if (idx.unique) {
+        const cols = d.prepare(`PRAGMA index_info("${idx.name}")`).all().map(c => c.name.toLowerCase());
+        if (cols.includes('an') && cols.includes('luna') && !cols.includes('asociatie_id')) {
+          needsPerioadeMigration = true;
+          break;
+        }
+      }
+    }
+
+    if (needsPerioadeMigration) {
+      d.pragma('foreign_keys = OFF');
+      d.transaction(() => {
+        d.exec(`
+          CREATE TABLE perioade_migration_tmp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asociatie_id INTEGER DEFAULT 1 REFERENCES asociatie(id),
+            an INTEGER NOT NULL,
+            luna INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'DESCHISA' CHECK(status IN ('DESCHISA', 'PUBLICATA', 'INCHISA')),
+            ultima_zi TEXT,
+            tarif_ar REAL DEFAULT 0,
+            tarif_ca REAL DEFAULT 0,
+            proc_ca REAL DEFAULT 100,
+            tarif_et REAL DEFAULT 0,
+            creat_la DATETIME DEFAULT CURRENT_TIMESTAMP,
+            inchis_la DATETIME,
+            inchis_de TEXT,
+            CONSTRAINT uq_perioade_an_luna UNIQUE(asociatie_id, an, luna)
+          );
+          INSERT INTO perioade_migration_tmp (id, asociatie_id, an, luna, status, ultima_zi, tarif_ar, tarif_ca, proc_ca, tarif_et, creat_la, inchis_la, inchis_de)
+          SELECT id, COALESCE(asociatie_id, 1), an, luna, status, ultima_zi, tarif_ar, tarif_ca, proc_ca, tarif_et, creat_la, inchis_la, inchis_de FROM perioade;
+          DROP TABLE perioade;
+          ALTER TABLE perioade_migration_tmp RENAME TO perioade;
+          CREATE INDEX IF NOT EXISTS idx_perioade_an_luna ON perioade (an, luna);
+        `);
+      })();
+      d.pragma('foreign_keys = ON');
+    }
+  } catch (_) {}
 
   // 1. Check and fix apartamente.persoane default value (G14)
   const apCols = d.prepare('PRAGMA table_info(apartamente)').all();
@@ -919,11 +964,11 @@ function seedDefaults(d) {
         program, telefon, proc_penalizare, zile_penalizare, luna_lucru, an_lucru, serie_chitante, urmatorul_numar_chitanta
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.2, 45, 9, 2026, 'ORH', 1)
     `).run(
-      'ASOCIATIA DE PROPRIETARI "ORHIDEEA"',
-      '26199625',
+      'ASOCIATIA DE PROPRIETARI TEST',
+      'RO00000000',
       '',
-      'Administrator Orhideea',
-      'Presedinte Orhideea',
+      'Administrator Test',
+      'Presedinte Test',
       'Str. Orhideelor, Bl. 19, Ap. 3',
       '510000',
       'ALBA',
@@ -943,7 +988,7 @@ function seedDefaults(d) {
   const insUser = d.prepare('INSERT OR IGNORE INTO users (username, password_hash, nume, rol, asociatie_id) VALUES (?, ?, ?, ?, ?)');
   insUser.run('superadmin', defaultHash, 'Super Administrator (Turn de Control)', 'superadmin', 1);
   insUser.run('admin', defaultHash, 'Administrator Asociatie', 'administrator', 1);
-  insUser.run('orhideea', defaultHash, 'Administrator Agenția ORHIDEEA', 'administrator', 1);
+  insUser.run('orhideea', defaultHash, 'Administrator Agenția TEST', 'administrator', 1);
   insUser.run('agentie_noua', defaultHash, 'Administrator Agenție Nouă (Blank)', 'administrator', 1);
   insUser.run('casier', defaultHash, 'Casier Principal', 'casier', 1);
 
@@ -951,8 +996,8 @@ function seedDefaults(d) {
   const perCount = d.prepare('SELECT COUNT(*) as cnt FROM perioade WHERE an = 2026 AND luna = 9').get();
   if (perCount.cnt === 0) {
     d.prepare(`
-      INSERT INTO perioade (an, luna, status, ultima_zi, tarif_ar, tarif_ca, proc_ca)
-      VALUES (2026, 9, 'DESCHISA', '2026-09-30', 9.48, 9.67, 100.0)
+      INSERT OR IGNORE INTO perioade (asociatie_id, an, luna, status, ultima_zi, tarif_ar, tarif_ca, proc_ca)
+      VALUES (1, 2026, 9, 'DESCHISA', '2026-09-30', 9.48, 9.67, 100.0)
     `).run();
   }
 

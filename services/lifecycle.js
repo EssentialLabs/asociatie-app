@@ -234,7 +234,7 @@ function writePeriodSnapshots(d, period, asociatie, blocuri, apartamente) {
     )
   `).run(
     period.id,
-    String(asociatie.nume || 'ORHIDEEA'),
+    String(asociatie.nume || 'ASOCIATIA TEST'),
     Number(asociatie.apa_rece ?? 0), Number(asociatie.can_met ?? 0), Number(asociatie.apa_calda ?? 0),
     Number(asociatie.etac ?? 0), Number(asociatie.incalzire ?? 0),
     Number(asociatie.gunoi ?? 0), Number(asociatie.ch_admin ?? 0), Number(asociatie.sal_tesa ?? 0),

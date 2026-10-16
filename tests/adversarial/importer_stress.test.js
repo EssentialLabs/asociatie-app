@@ -42,7 +42,7 @@ function cleanupSandbox() {
   } catch (_) {}
 }
 
-describe('Master Adversarial Stress Suite: import-foxpro.js', () => {
+describe('Master Adversarial Stress Suite: import-foxpro.js', { concurrency: 1 }, () => {
   before(() => {
     cleanupSandbox();
     fs.mkdirSync(SANDBOX_DIR, { recursive: true });
@@ -98,7 +98,7 @@ describe('Master Adversarial Stress Suite: import-foxpro.js', () => {
   // =========================================================================
   // DIMENSION 2: IDEMPOTENCY UNDER --force
   // =========================================================================
-  describe('Dimension 2: Importer Idempotency & Re-entrancy', () => {
+  describe('Dimension 2: Importer Idempotency & Re-entrancy', { concurrency: 1 }, () => {
     it('Consecutive runs with --force produce 100% identical balances with zero duplicates', () => {
       cleanupDb(IDEMPOTENCY_DB_PATH);
 
@@ -114,7 +114,7 @@ describe('Master Adversarial Stress Suite: import-foxpro.js', () => {
       // Capture Run 1 metrics
       let run1Metrics;
       {
-        const db = new Database(IDEMPOTENCY_DB_PATH, { readonly: true });
+        const db = new Database(IDEMPOTENCY_DB_PATH);
         try {
           const dCount = db.prepare('SELECT COUNT(*) as c FROM datorii').get().c;
           const pCount = db.prepare('SELECT COUNT(*) as c FROM plati').get().c;
@@ -167,7 +167,7 @@ describe('Master Adversarial Stress Suite: import-foxpro.js', () => {
       // Capture Run 2 metrics
       let run2Metrics;
       {
-        const db = new Database(IDEMPOTENCY_DB_PATH, { readonly: true });
+        const db = new Database(IDEMPOTENCY_DB_PATH);
         try {
           const dCount = db.prepare('SELECT COUNT(*) as c FROM datorii').get().c;
           const pCount = db.prepare('SELECT COUNT(*) as c FROM plati').get().c;

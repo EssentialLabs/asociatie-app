@@ -247,6 +247,7 @@ function runImport(options = {}) {
   fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
   db.pragma('foreign_keys = ON');
 
   try {
@@ -279,12 +280,12 @@ function runImport(options = {}) {
           serie_chitante = ?, urmatorul_numar_chitanta = ?, luna_lucru = ?, an_lucru = ?
         WHERE id = ?
       `).run(
-        aRec.ASOC || 'ASOCIATIA DE PROPRIETARI "ORHIDEEA"',
-        aRec.COD_FISCAL || '26199625',
+        anonymize ? 'ASOCIATIA DE PROPRIETARI TEST' : (aRec.ASOC || 'ASOCIATIA DE PROPRIETARI TEST'),
+        anonymize ? 'RO00000000' : (aRec.COD_FISCAL || 'RO00000000'),
         aRec.N_R_COM || '',
-        aRec.ADMINISTR || '',
-        aRec.PRESEDINTE || '',
-        aRec.ADRESA || '',
+        anonymize ? 'Administrator Test' : (aRec.ADMINISTR || ''),
+        anonymize ? 'Presedinte Test' : (aRec.PRESEDINTE || ''),
+        anonymize ? 'Strada Test nr. 1' : (aRec.ADRESA || ''),
         aRec.COD ? String(aRec.COD) : '510000',
         aRec.JUDET || 'ALBA',
         aRec.CONT || '',
@@ -308,12 +309,12 @@ function runImport(options = {}) {
           luna_lucru, an_lucru
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        aRec.ASOC || 'ASOCIATIA DE PROPRIETARI "ORHIDEEA"',
-        aRec.COD_FISCAL || '26199625',
+        anonymize ? 'ASOCIATIA DE PROPRIETARI TEST' : (aRec.ASOC || 'ASOCIATIA DE PROPRIETARI TEST'),
+        anonymize ? 'RO00000000' : (aRec.COD_FISCAL || 'RO00000000'),
         aRec.N_R_COM || '',
-        aRec.ADMINISTR || '',
-        aRec.PRESEDINTE || '',
-        aRec.ADRESA || '',
+        anonymize ? 'Administrator Test' : (aRec.ADMINISTR || ''),
+        anonymize ? 'Presedinte Test' : (aRec.PRESEDINTE || ''),
+        anonymize ? 'Strada Test nr. 1' : (aRec.ADRESA || ''),
         aRec.COD ? String(aRec.COD) : '510000',
         aRec.JUDET || 'ALBA',
         aRec.CONT || '',
@@ -689,7 +690,7 @@ function runImport(options = {}) {
           const { records: asRecs } = parseDbf(asFile);
           const as = asRecs[0] || {};
           insertAsocLuna.run(
-            pId, as.ASOC || 'ORHIDEEA',
+            pId, anonymize ? 'ASOCIATIA TEST' : (as.ASOC || 'ASOCIATIA TEST'),
             as.APA_RECE || 0, as.CAN_MET || 0, as.APA_CALDA || 0, as.ETAC || 0, as.INCALZIRE || 0, as.GUNOI || 0,
             as.CH_ADMIN || 0, as.SAL_TESA || 0, as.SAL_FEME || 0, as.ABONAMENT || 0, as.CH_SEDIU || 0, as.RULMENT || 0,
             as.TOT_APART || 0, as.PERSOANE1 || 0, as.PERSOANE2 || 0, as.PERSGU || 0, as.PERS_AR || 0, as.PERS_AC || 0, as.PERS_ACX || 0,

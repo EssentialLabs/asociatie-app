@@ -128,14 +128,14 @@ function createSeededMemoryDb() {
   // Seed BANCA, PATRIMONIU, and ORDINE_PLATA rows for CBA, CP1, ORD reports
   db.prepare(`
     INSERT INTO banca (asoc, document, data, suma, tip, act_pas, explicatie)
-    VALUES ('ORHIDEEA', 'EXT-101', '2026-09-19', 1500.00, 'D', 'A', 'Depunere numerar casierie')
+    VALUES ('ASOCIATIA TEST', 'EXT-101', '2026-09-19', 1500.00, 'D', 'A', 'Depunere numerar casierie')
   `).run();
 
   db.prepare(`
     INSERT INTO patrimoniu (asoc, document, data, suma, act_pas, explicatie, perioada, data_pres)
     VALUES
-      ('ORHIDEEA', 'SOLD-A1', '2026-09-30', 12500.00, 'A', 'Sold Casa si Banca', 'SEPTEMBRIE 2026', '2026-09-30'),
-      ('ORHIDEEA', 'SOLD-P1', '2026-09-30', 12500.00, 'P', 'Fond Rulment si Reparatii', 'SEPTEMBRIE 2026', '2026-09-30')
+      ('ASOCIATIA TEST', 'SOLD-A1', '2026-09-30', 12500.00, 'A', 'Sold Casa si Banca', 'SEPTEMBRIE 2026', '2026-09-30'),
+      ('ASOCIATIA TEST', 'SOLD-P1', '2026-09-30', 12500.00, 'P', 'Fond Rulment si Reparatii', 'SEPTEMBRIE 2026', '2026-09-30')
   `).run();
 
   db.prepare(`
@@ -146,7 +146,7 @@ function createSeededMemoryDb() {
       reprez1, reprez2
     ) VALUES (
       14, '2026-09-22', 'A', 845.50,
-      'ASOCIATIA DE PROPRIETARI ORHIDEEA', '26199625', 'RO49AAAA1B31007593840000', 'BCR ALBA',
+      'ASOCIATIA DE PROPRIETARI TEST', 'RO00000000', 'RO49AAAA1B31007593840000', 'BCR ALBA',
       'APA CTTA SA ALBA', 'RO1765432', 'RO12TREZ0025069XXX001234', 'TREZORERIA ALBA',
       'Plata factura apa rece', 'Septembrie 2026'
     )

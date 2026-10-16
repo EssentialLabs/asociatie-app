@@ -45,7 +45,7 @@ describe('Challenger Suite 1: Legacy Database Migrations & Edge-Case Schemas', (
       // Verify default seeding succeeded
       const asocRow = db.prepare('SELECT * FROM asociatie WHERE id = 1').get();
       assert.ok(asocRow, 'Default asociatie row must be seeded');
-      assert.equal(asocRow.cod_fiscal, '26199625');
+      assert.equal(asocRow.cod_fiscal, 'RO00000000');
     } finally {
       cleanup();
     }

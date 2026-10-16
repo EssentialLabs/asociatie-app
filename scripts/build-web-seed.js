@@ -20,20 +20,41 @@ const SEED_PATH = path.join(ROOT, 'public', 'demo-seed.json');
 function buildWebAssets() {
   const db = new Database(DB_PATH, { readonly: true });
 
-  const asoc1 = db.prepare('SELECT * FROM asociatie WHERE id = 1').get();
-  const asoc2 = {
+  const asoc1 = db.prepare('SELECT * FROM asociatie WHERE id = 1').get() || {
+    id: 1,
+    nume: 'ASOCIATIA DE PROPRIETARI TEST',
+    cod_fiscal: 'RO00000000',
+    n_r_com: '',
+    administrator: 'Administrator Test',
+    presedinte: 'Presedinte Test',
+    adresa: 'Strada Test nr. 1',
+    cod_postal: '510000',
+    judet: 'ALBA',
+    cont_bancar: '',
+    banca: '',
+    program: 'Luni - Vineri: 16:00 - 18:00',
+    telefon: '',
+    proc_penalizare: 0.2,
+    zile_penalizare: 45,
+    serie_chitante: 'ORH',
+    urmatorul_numar_chitanta: 1,
+    luna_lucru: 9,
+    an_lucru: 2026,
+    cota_fr: 0
+  };
+  const asoc2 = db.prepare('SELECT * FROM asociatie WHERE id = 2').get() || {
     id: 2,
-    nume: 'ASOCIAȚIA DEMO CURATĂ (Workspace Nou)',
-    cod_fiscal: 'RO99887766',
+    nume: 'ASOCIATIA DEMO CURATA (Workspace Nou)',
+    cod_fiscal: 'RO11111111',
     n_r_com: 'J40/100/2026',
-    administrator: 'Administrator Agenție Nouă',
-    presedinte: 'Președinte Agenție Nouă',
-    adresa: 'Str. Exemplu Nou nr. 1',
+    administrator: 'Administrator Nou',
+    presedinte: 'Presedinte Nou',
+    adresa: 'Strada Noua nr. 2',
     cod_postal: '010101',
-    judet: 'BUCUREȘTI',
+    judet: 'BUCURESTI',
     cont_bancar: 'RO49AAAA1B31007593840000',
     banca: 'Banca Transilvania',
-    program: 'Luni-Vineri 09:00 - 17:00',
+    program: 'Luni - Vineri: 09:00 - 17:00',
     telefon: '0722 000 000',
     proc_penalizare: 0.2,
     zile_penalizare: 45,
@@ -46,7 +67,11 @@ function buildWebAssets() {
     ch_admin: 0, sal_tesa: 0, sal_feme: 0, abonament: 0, ch_sediu: 0, rulment: 0
   };
 
-  const perioade = db.prepare('SELECT * FROM perioade ORDER BY an DESC, luna DESC LIMIT 36').all();
+  const perioade = db.prepare('SELECT * FROM perioade ORDER BY an DESC, luna DESC LIMIT 50').all();
+  const p2 = db.prepare('SELECT * FROM perioade WHERE asociatie_id = 2 LIMIT 1').get() || {
+    id: 9999, asociatie_id: 2, an: 2026, luna: 9, status: 'DESCHISA', ultima_zi: '2026-09-30', tarif_ar: 9.48, tarif_ca: 9.67, proc_ca: 100, tarif_et: 0
+  };
+  const perioadeList = perioade.some(p => p.asociatie_id === 2) ? perioade : [...perioade, p2];
   const blocuri = db.prepare(
     'SELECT b.*, (SELECT COUNT(*) FROM apartamente a WHERE a.bloc_id = b.id) as nr_apartamente_actual, (SELECT COALESCE(SUM(a.persoane),0) FROM apartamente a WHERE a.bloc_id = b.id) as nr_persoane FROM blocuri b ORDER BY b.bloc'
   ).all();
@@ -75,10 +100,7 @@ function buildWebAssets() {
   const seed = {
     generated_at: new Date().toISOString(),
     asociatii: [asoc1, asoc2],
-    perioade: [
-      ...perioade,
-      { id: 9999, asociatie_id: 2, an: 2026, luna: 9, status: 'DESCHISA', ultima_zi: '2026-09-30', tarif_ar: 9.48, tarif_ca: 9.67, proc_ca: 100, tarif_et: 0 }
-    ],
+    perioade: perioadeList,
     blocuri,
     apartamente,
     datorii: datoriiUnpaid,

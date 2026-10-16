@@ -15,6 +15,13 @@
 
   const nativeFetch = window.fetch.bind(window);
   let backendMode = null; // 'node' | 'browser'
+  if (
+    typeof window !== 'undefined' &&
+    window.location &&
+    (window.location.hostname.endsWith('surge.sh') || window.location.hostname.endsWith('github.io'))
+  ) {
+    backendMode = 'browser';
+  }
   let seedCache = null;
 
   // =========================================================================
@@ -145,6 +152,51 @@
   // =========================================================================
   // 2. TRANSPARENT IN-BROWSER BACKEND FOR GITHUB PAGES / STATIC HOSTING
   // =========================================================================
+  function ensureDefaultAsociatii(state) {
+    if (!state.asociatii || !Array.isArray(state.asociatii)) {
+      state.asociatii = [];
+    }
+    let asoc1 = state.asociatii.find((a) => Number(a.id) === 1);
+    if (!asoc1) {
+      asoc1 = {
+        id: 1,
+        nume: 'ASOCIAȚIA TEST (10 Blocuri / 78 Ap.)',
+        cod_fiscal: '',
+        administrator: 'Administrator Test',
+        presedinte: 'Președinte Asociație',
+        adresa: 'Str. Principală Nr. 1',
+        serie_chitante: 'ASN',
+        urmatorul_numar_chitanta: 1,
+        luna_lucru: 9,
+        an_lucru: 2026
+      };
+      state.asociatii.unshift(asoc1);
+    } else {
+      asoc1.nume = 'ASOCIAȚIA TEST (10 Blocuri / 78 Ap.)';
+      asoc1.cod_fiscal = '';
+    }
+
+    let asoc2 = state.asociatii.find((a) => Number(a.id) === 2);
+    if (!asoc2) {
+      asoc2 = {
+        id: 2,
+        nume: 'ASOCIAȚIA DEMO CURATĂ (Workspace Nou)',
+        cod_fiscal: '',
+        administrator: 'Admin Agenție Nouă',
+        presedinte: 'Președinte Nou',
+        adresa: 'Bulevardul Unirii Nr. 10',
+        serie_chitante: 'AGN',
+        urmatorul_numar_chitanta: 1,
+        luna_lucru: 9,
+        an_lucru: 2026
+      };
+      state.asociatii.push(asoc2);
+    } else {
+      asoc2.nume = 'ASOCIAȚIA DEMO CURATĂ (Workspace Nou)';
+      asoc2.cod_fiscal = '';
+    }
+  }
+
   async function ensureSeedLoaded() {
     if (seedCache) return seedCache;
     try {
@@ -152,6 +204,7 @@
       if (saved) {
         seedCache = JSON.parse(saved);
         if (seedCache && Array.isArray(seedCache.asociatii) && seedCache.precomputed_reports) {
+          ensureDefaultAsociatii(seedCache);
           return seedCache;
         }
       }
@@ -164,6 +217,7 @@
     seedCache.patrimoniu = seedCache.patrimoniu || [];
     seedCache.ordine_plata = seedCache.ordine_plata || [];
     seedCache.audit_logs = seedCache.audit_logs || [];
+    ensureDefaultAsociatii(seedCache);
     persistState();
     return seedCache;
   }
@@ -211,6 +265,7 @@
       headers['X-Asociatie-Id'] ||
         headers['x-asociatie-id'] ||
         u.searchParams.get('asociatie_id') ||
+        localStorage.getItem('asoc_workspace_id') ||
         localStorage.getItem('activeAsociatieId') ||
         1
     );
@@ -222,7 +277,9 @@
     }
 
     const activeAsoc = state.asociatii.find((a) => Number(a.id) === asocId) || state.asociatii[0];
-    const asocBlocs = state.blocuri.filter((b) => Number(b.asociatie_id || 1) === Number(activeAsoc.id));
+    const asocBlocs = Number(activeAsoc.id) === 2
+      ? state.blocuri.filter((b) => Number(b.asociatie_id) === 2)
+      : state.blocuri.filter((b) => Number(b.asociatie_id || 1) === 1);
     const asocBlocIds = new Set(asocBlocs.map((b) => Number(b.id)));
     const asocApts = state.apartamente.filter((a) => asocBlocIds.has(Number(a.bloc_id)));
 
@@ -239,13 +296,21 @@
 
     if (path === '/api/operatiuni/asociatii' && method === 'GET') {
       return jsonResponse(
-        state.asociatii.map((a) => ({
-          ...a,
-          total_blocuri: state.blocuri.filter((b) => Number(b.asociatie_id || 1) === Number(a.id)).length,
-          total_apartamente: state.apartamente.filter((ap) =>
-            state.blocuri.some((b) => Number(b.id) === Number(ap.bloc_id) && Number(b.asociatie_id || 1) === Number(a.id))
-          ).length
-        }))
+        state.asociatii.map((a) => {
+          const isClean = Number(a.id) === 2;
+          const bList = isClean
+            ? state.blocuri.filter((b) => Number(b.asociatie_id) === 2)
+            : state.blocuri.filter((b) => Number(b.asociatie_id || 1) === 1);
+          const bIds = new Set(bList.map((b) => Number(b.id)));
+          const aptCount = state.apartamente.filter((ap) => bIds.has(Number(ap.bloc_id))).length;
+          return {
+            ...a,
+            nr_blocuri: bList.length,
+            total_blocuri: bList.length,
+            nr_apartamente: aptCount,
+            total_apartamente: aptCount
+          };
+        })
       );
     }
 
@@ -448,31 +513,49 @@
     if (repMatch) {
       const code = repMatch[1].toUpperCase();
       const showNames = u.searchParams.get('showNames') === 'true' || u.searchParams.get('gdpr') === 'false';
-      const baseReport = (state.precomputed_reports && state.precomputed_reports[code]) || {
-        code,
-        title: `Raport ${code}`,
-        category: 'LISTARE',
-        asociatie: activeAsoc,
-        period: { an: activeAsoc.an_lucru || 2026, luna: activeAsoc.luna_lucru || 9 },
-        columns: [
-          { key: 'bloc', label: 'Bloc' },
-          { key: 'numar_apart', label: 'Ap.' },
-          { key: 'nume_proprietar', label: 'Proprietar' },
-          { key: 'persoane', label: 'Pers.' },
-          { key: 'suprafata', label: 'Suprafață' },
-          { key: 'restante', label: 'Restanțe (RON)' }
-        ],
-        rows: asocApts,
-        totals: { count: asocApts.length }
-      };
+      let baseReport = (state.precomputed_reports && state.precomputed_reports[code])
+        ? JSON.parse(JSON.stringify(state.precomputed_reports[code]))
+        : null;
+
+      if (!baseReport) {
+        baseReport = {
+          code,
+          title: `Raport ${code}`,
+          category: 'LISTARE',
+          asociatie: activeAsoc,
+          period: { an: activeAsoc.an_lucru || 2026, luna: activeAsoc.luna_lucru || 9 },
+          columns: [
+            { key: 'bloc', label: 'Bloc' },
+            { key: 'numar_apart', label: 'Ap.' },
+            { key: 'nume_proprietar', label: 'Proprietar' },
+            { key: 'persoane', label: 'Pers.' },
+            { key: 'suprafata', label: 'Suprafață' },
+            { key: 'restante', label: 'Restanțe (RON)' }
+          ],
+          rows: asocApts,
+          totals: { count: asocApts.length }
+        };
+      } else {
+        baseReport.asociatie = activeAsoc;
+        if (Number(activeAsoc.id) === 2) {
+          baseReport.rows = [];
+          baseReport.totals = { count: 0 };
+        }
+      }
+
       const masked = maskReportGdpr(baseReport, code, showNames);
       if (u.searchParams.get('format') === 'csv') {
         const cols = masked.columns || [];
-        const header = cols.map((c) => `"${c.label || c.key}"`).join(',');
-        const lines = (masked.rows || []).map((r) => cols.map((c) => `"${String(r[c.key] ?? '').replace(/"/g, '""')}"`).join(','));
+        const header = cols.map((c) => `"${String(c.label || c.key || '').replace(/"/g, '""')}"`).join(',');
+        const lines = (masked.rows || []).map((r) =>
+          cols.map((c) => `"${String(r[c.key] ?? '').replace(/"/g, '""')}"`).join(',')
+        );
         return new Response('\uFEFF' + [header, ...lines].join('\r\n'), {
           status: 200,
-          headers: { 'Content-Type': 'text/csv; charset=utf-8' }
+          headers: {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': `attachment; filename="raport_${code}.csv"`
+          }
         });
       }
       return jsonResponse(masked);
@@ -557,8 +640,8 @@
       const errs = getLocalTelemetryErrors();
       return jsonResponse({
         platform: activeAsoc.nume || 'TEST ADMINISTRATORI',
-        version: '2.5.0-ORHIDEEA-Parity',
-        environment: 'github-pages-live',
+        version: '2.5.0-FoxPro-Parity',
+        environment: window.location.hostname.endsWith('surge.sh') ? 'surge-live' : 'github-pages-live',
         uptime: Math.floor(performance.now() / 1000),
         asociatie: activeAsoc,
         stats: {
@@ -583,8 +666,8 @@
         blocuri: asocBlocs.length,
         apartamente: asocApts.length,
         persoane: asocApts.reduce((s, a) => s + Number(a.persoane || 0), 0),
-        facturi: 12,
-        totalFacturi: 18450.25,
+        facturi: Number(activeAsoc.id) === 2 ? 0 : 12,
+        totalFacturi: Number(activeAsoc.id) === 2 ? 0 : 18450.25,
         chitante: (state.chitante || []).length,
         totalIncasat: (state.chitante || []).reduce((s, c) => s + Number(c.suma || 0), 0),
         luna_lucru: activeAsoc.luna_lucru || 9,
@@ -608,8 +691,16 @@
       return nativeFetch(input, init);
     }
 
+    if (
+      typeof window !== 'undefined' &&
+      window.location &&
+      (window.location.hostname.endsWith('surge.sh') || window.location.hostname.endsWith('github.io'))
+    ) {
+      backendMode = 'browser';
+    }
+
     // Inject active multi-tenant X-Asociatie-Id header if set
-    const activeAsocId = localStorage.getItem('activeAsociatieId') || '1';
+    const activeAsocId = localStorage.getItem('asoc_workspace_id') || localStorage.getItem('activeAsociatieId') || '1';
     init.headers = {
       ...(init.headers || {}),
       'X-Asociatie-Id': (init.headers && (init.headers['X-Asociatie-Id'] || init.headers['x-asociatie-id'])) || activeAsocId
@@ -623,7 +714,7 @@
       const response = await nativeFetch(input, init);
       const contentType = response.headers.get('content-type') || '';
 
-      // If hosted on GitHub Pages, /api/* returns 404 HTML -> switch seamlessly to in-browser runtime!
+      // If hosted on GitHub Pages or Surge, /api/* returns 404 HTML -> switch seamlessly to in-browser runtime!
       if (response.status === 404 && !contentType.includes('application/json') && window.location.hostname !== 'localhost') {
         backendMode = 'browser';
         updateModeIndicator();
@@ -660,23 +751,25 @@
   // =========================================================================
   window.switchTestAccount = async function (accountType) {
     localStorage.setItem('activeTestAccount', accountType);
-    if (accountType === 'orhideea') {
-      localStorage.setItem('activeAsociatieId', '1');
+    let targetId = '1';
+    if (accountType === 'orhideea' || accountType === 'test_asoc') {
+      targetId = '1';
       if (typeof window.setRole === 'function') window.setRole('admin');
     } else if (accountType === 'clean_agency') {
+      targetId = '2';
       // Ensure asociatie_id = 2 exists on backend if running on Node
       if (backendMode === 'node') {
         try {
           const listRes = await fetch('/api/operatiuni/asociatii');
           const list = await listRes.json();
-          let cleanAsoc = Array.isArray(list) ? list.find((a) => Number(a.id) > 1) : null;
+          let cleanAsoc = Array.isArray(list) ? list.find((a) => Number(a.id) === 2 || Number(a.id) > 1) : null;
           if (!cleanAsoc) {
             const createRes = await fetch('/api/operatiuni/asociatii', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 nume: 'ASOCIAȚIA DEMO CURATĂ (Workspace Nou)',
-                cod_fiscal: 'RO99887766',
+                cod_fiscal: '',
                 administrator: 'Admin Agenție Nouă',
                 serie_chitante: 'AGN'
               })
@@ -684,22 +777,28 @@
             const created = await createRes.json();
             cleanAsoc = { id: created.asociatie_id || 2 };
           }
-          localStorage.setItem('activeAsociatieId', String(cleanAsoc.id || 2));
+          targetId = String(cleanAsoc.id || 2);
         } catch (_) {
-          localStorage.setItem('activeAsociatieId', '2');
+          targetId = '2';
         }
-      } else {
-        localStorage.setItem('activeAsociatieId', '2');
       }
       if (typeof window.setRole === 'function') window.setRole('admin');
     } else if (accountType === 'superadmin') {
-      localStorage.setItem('activeAsociatieId', '1');
+      targetId = '1';
       if (typeof window.setRole === 'function') window.setRole('superadmin');
     }
 
+    localStorage.setItem('asoc_workspace_id', targetId);
+    localStorage.setItem('activeAsociatieId', targetId);
+
     const sel = document.getElementById('global-asociatie-select');
     if (sel) {
-      sel.value = localStorage.getItem('activeAsociatieId') || '1';
+      sel.value = targetId;
+    }
+
+    if (typeof window.switchAsociatieWorkspace === 'function') {
+      await window.switchAsociatieWorkspace(targetId);
+    } else if (sel) {
       sel.dispatchEvent(new Event('change'));
     } else {
       window.location.reload();
@@ -718,7 +817,11 @@
   function updateModeIndicator() {
     const el = document.getElementById('quick-runtime-mode');
     if (el) {
-      el.textContent = backendMode === 'browser' ? '☁️ GitHub Pages Live' : '🟢 Server SQLite Activ';
+      const isSurge = typeof window !== 'undefined' && window.location.hostname.endsWith('surge.sh');
+      const isGhPages = typeof window !== 'undefined' && window.location.hostname.endsWith('github.io');
+      el.textContent = backendMode === 'browser'
+        ? (isSurge ? '☁️ Surge Live' : isGhPages ? '☁️ GitHub Pages Live' : '☁️ In-Browser Demo')
+        : '🟢 Server SQLite Activ';
     }
   }
 
@@ -731,16 +834,23 @@
         'background:#0f172a;color:#f8fafc;padding:6px 14px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border-bottom:1px solid #334155;z-index:9999;';
       document.body.insertBefore(bar, document.body.firstChild);
     }
-    const activeAcc = localStorage.getItem('activeTestAccount') || 'orhideea';
+    const activeAcc = localStorage.getItem('activeTestAccount') || 'test_asoc';
+    const isTestAsoc = activeAcc === 'test_asoc' || activeAcc === 'orhideea';
     const errCount = getLocalTelemetryErrors().length;
+
+    const isSurge = typeof window !== 'undefined' && window.location.hostname.endsWith('surge.sh');
+    const isGhPages = typeof window !== 'undefined' && window.location.hostname.endsWith('github.io');
+    const modeLabel = backendMode === 'browser'
+      ? (isSurge ? '☁️ Surge Live' : isGhPages ? '☁️ GitHub Pages Live' : '☁️ In-Browser Demo')
+      : '🟢 Server SQLite Activ';
 
     bar.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span style="font-weight:700;color:#38bdf8;">🔑 Conturi Rapide de Test:</span>
-        <button onclick="window.switchTestAccount('orhideea')" style="cursor:pointer;padding:3px 9px;border-radius:4px;border:1px solid ${
-          activeAcc === 'orhideea' ? '#38bdf8' : '#475569'
-        };background:${activeAcc === 'orhideea' ? '#0284c7' : '#1e293b'};color:#fff;font-weight:600;font-size:11px;">
-          🏢 1. Agenția ORHIDEEA (Date Istorice FoxPro: 10 Blocuri / 78 Ap.)
+        <button onclick="window.switchTestAccount('test_asoc')" style="cursor:pointer;padding:3px 9px;border-radius:4px;border:1px solid ${
+          isTestAsoc ? '#38bdf8' : '#475569'
+        };background:${isTestAsoc ? '#0284c7' : '#1e293b'};color:#fff;font-weight:600;font-size:11px;">
+          🏢 1. Asociația TEST (Date FoxPro: 10 Blocuri / 78 Ap.)
         </button>
         <button onclick="window.switchTestAccount('clean_agency')" style="cursor:pointer;padding:3px 9px;border-radius:4px;border:1px solid ${
           activeAcc === 'clean_agency' ? '#10b981' : '#475569'
@@ -754,9 +864,7 @@
         </button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span id="quick-runtime-mode" style="color:#94a3b8;font-size:11px;">${
-          backendMode === 'browser' ? '☁️ GitHub Pages Live' : '🟢 Server SQLite Activ'
-        }</span>
+        <span id="quick-runtime-mode" style="color:#94a3b8;font-size:11px;">${modeLabel}</span>
         <button onclick="window.triggerTestTelemetryError()" title="Generează o eroare de test și o salvează în telemetry-errors.jsonl" style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid #64748b;background:#1e293b;color:#fca5a5;font-size:11px;">
           🧪 Test Eroare (<span id="quick-telemetry-count">${errCount}</span>)
         </button>

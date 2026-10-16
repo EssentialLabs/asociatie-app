@@ -152,7 +152,7 @@ function syncDailyCashSummary(dbOrNull, dateStr, asociatieId = 1, periodeId = nu
   const asoc =
     d.prepare('SELECT * FROM asociatie WHERE id = ?').get(asociatieId) ||
     d.prepare('SELECT * FROM asociatie ORDER BY id LIMIT 1').get() ||
-    { nume: 'ORHIDEEA' };
+    { nume: 'ASOCIATIA TEST' };
 
   const activePer =
     (periodeId && d.prepare('SELECT * FROM perioade WHERE id = ?').get(periodeId)) ||
@@ -185,7 +185,7 @@ function syncDailyCashSummary(dbOrNull, dateStr, asociatieId = 1, periodeId = nu
       d.prepare(`
         INSERT INTO casa (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie)
         VALUES (?, ?, 'CHIT', ?, ?, 'I', 'A', ?)
-      `).run(activePer?.id || null, asoc.nume || 'ORHIDEEA', isoDate, totalZi, explicatie);
+      `).run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', isoDate, totalZi, explicatie);
     }
   } else if (existing) {
     d.prepare('DELETE FROM casa WHERE id = ?').run(existing.id);
