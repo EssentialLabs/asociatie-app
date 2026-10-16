@@ -1,0 +1,2532 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestiune Asociație de Proprietari - TEST ADMINISTRATORI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- BANNER IMPERSONARE SUPERADMIN (PRETENDER) -->
+  <div id="impersonation-banner" class="impersonation-banner" style="display:none;">
+    <div class="impersonation-content">
+      <span>🎭 <strong>MOD IMPERSONARE ACTIV:</strong> Superadmin acționează în numele <strong>Administratorului Asociației TEST</strong>.</span>
+      <button class="btn btn-small btn-warning" onclick="stopImpersonating()">⏹️ Oprește Impersonarea (Revino la Superadmin)</button>
+    </div>
+  </div>
+
+  <!-- TOP HEADER & MAIN NAVIGATION -->
+  <header class="top-nav">
+    <div class="top-nav-brand">
+      <span class="brand-icon">🏢</span>
+      <div class="brand-info">
+        <span class="brand-title" id="top-nav-brand-title">ORHIDEEA / TEST Administratori</span>
+        <span class="brand-subtitle" id="top-nav-subtitle">Asociație de Proprietari • Luna activă: Septembrie 2026</span>
+      </div>
+    </div>
+
+    <!-- GLOBAL AGENCY / WORKSPACE & PERIOD SWITCHER -->
+    <div class="top-nav-switchers" id="top-nav-switchers">
+      <div class="switcher-group" title="Comută Asociația / Agenția (Multi-Tenant Workspace)">
+        <label for="global-asociatie-select">🏢 Asociație:</label>
+        <select id="global-asociatie-select" class="top-nav-select" onchange="switchAsociatieWorkspace(this.value)">
+          <option value="1">ORHIDEEA (ID #1)</option>
+        </select>
+      </div>
+      <div class="switcher-group" title="Selectează Perioada Lunară de Lucru">
+        <label for="global-perioada-select">📅 Perioadă:</label>
+        <select id="global-perioada-select" class="top-nav-select" onchange="switchPerioadaGlobal(this.value)">
+          <option value="2026-9">Septembrie 2026</option>
+        </select>
+        <span class="badge badge-info" id="global-perioada-status-badge">DESCHISA</span>
+      </div>
+      <button class="top-nav-cmd-btn" id="btn-cmd-palette" onclick="openCommandPalette()" title="Căutare Rapidă 58 Operațiuni & 35 Rapoarte FoxPro (Ctrl+K)">
+        🔍 Caută Cod FoxPro <kbd>Ctrl+K</kbd>
+      </button>
+    </div>
+
+    <nav class="top-nav-menu">
+      <button class="top-nav-btn active" id="nav-btn-blocuri" onclick="switchMainSection('blocuri')">
+        <span class="nav-icon">🏢</span> Administrare Blocuri
+      </button>
+      <button class="top-nav-btn" id="nav-btn-avizier" onclick="switchMainSection('avizier')">
+        <span class="nav-icon">📋</span> Avizier / Listă Plată
+      </button>
+      <button class="top-nav-btn" id="nav-btn-casierie" onclick="switchMainSection('casierie')">
+        <span class="nav-icon">🧾</span> Casierie & Chitanțe
+      </button>
+      <button class="top-nav-btn" id="nav-btn-rapoarte" onclick="switchMainSection('rapoarte')">
+        <span class="nav-icon">📊</span> Rapoarte (35)
+      </button>
+      <button class="top-nav-btn" id="nav-btn-registre" onclick="switchMainSection('registre')">
+        <span class="nav-icon">📒</span> Registre Financiare
+      </button>
+      <button class="top-nav-btn" id="nav-btn-luna" onclick="switchMainSection('luna')">
+        <span class="nav-icon">📅</span> Sfârșit de Lună
+      </button>
+      <button class="top-nav-btn nav-btn-highlight" id="nav-btn-ghid" onclick="switchMainSection('ghid')">
+        <span class="nav-icon">📖</span> Ghid FoxPro → Web
+      </button>
+      <button class="top-nav-btn nav-btn-control-tower" id="nav-btn-control-tower" onclick="switchMainSection('control-tower')" style="display:none;">
+        <span class="nav-icon">🎮</span> Turn de Control
+      </button>
+    </nav>
+    <div class="top-nav-user-area" id="top-nav-user-area">
+      <!-- Populat din JS -->
+    </div>
+  </header>
+
+  <!-- INTERACTIVE 6-STAGE FOXPRO WORKFLOW STEPPER BAR -->
+  <div class="workflow-stepper-bar" id="workflow-stepper-bar">
+    <div class="stepper-stages">
+      <button class="stepper-stage active" id="stepper-stage-1" onclick="goToWorkflowStage(1)" title="Actualizare Date Generale, Asociație, Blocuri și Apartamente">
+        <span class="stage-num">1</span>
+        <span class="stage-label">Actualizare <small>(ADG/ADA/ADB/APS)</small></span>
+      </button>
+      <span class="stepper-arrow">➔</span>
+      <button class="stepper-stage" id="stepper-stage-2" onclick="goToWorkflowStage(2)" title="Expirare Reduceri (TCE), Calcul Repartitoare (CRE), Însumare & Calcul (SUM)">
+        <span class="stage-num">2</span>
+        <span class="stage-label">Calcul <small>(TCE/CRE/SUM)</small></span>
+      </button>
+      <span class="stepper-arrow">➔</span>
+      <button class="stepper-stage" id="stepper-stage-3" onclick="goToWorkflowStage(3)" title="Trecere Valori de Plată în Registru (TRE) / Golire (GOL)">
+        <span class="stage-num">3</span>
+        <span class="stage-label">Publicare <small>(TRE/GOL)</small></span>
+      </button>
+      <span class="stepper-arrow">➔</span>
+      <button class="stepper-stage" id="stepper-stage-4" onclick="goToWorkflowStage(4)" title="Taie Chitanțe Individuale (CHI) și Colective / Fond (CHO)">
+        <span class="stage-num">4</span>
+        <span class="stage-label">Casierie <small>(CHI/CHO)</small></span>
+      </button>
+      <span class="stepper-arrow">➔</span>
+      <button class="stepper-stage" id="stepper-stage-5" onclick="goToWorkflowStage(5)" title="Catalog 35 Rapoarte FoxPro: Listare (A-P), Situații (A-Q), Centralizare (IN1/IN2)">
+        <span class="stage-num">5</span>
+        <span class="stage-label">Rapoarte <small>(35)</small></span>
+      </button>
+      <span class="stepper-arrow">➔</span>
+      <button class="stepper-stage" id="stepper-stage-6" onclick="goToWorkflowStage(6)" title="Închidere Lună, Arhivare Snapshot și Rotire Indecși (SLU)">
+        <span class="stage-num">6</span>
+        <span class="stage-label">Sfârșit Lună <small>(SLU)</small></span>
+      </button>
+    </div>
+    <div class="stepper-quick-actions">
+      <button class="btn btn-small btn-secondary" onclick="showDateGeneraleModal()" title="Actualizare Date Generale Lună (ADG)">⚙️ ADG (Tarife Lună)</button>
+      <button class="btn btn-small btn-warning" onclick="runCalculSUM()" title="Rulează TCE + CRE + SUM (Calcul Complet 8 Pași)">🧮 Calculează Luna (SUM)</button>
+      <button class="btn btn-small btn-success" onclick="publicaLunaCurenta()" title="Publică Luna în Registrul Datorii (TRE)">📤 Publică (TRE)</button>
+    </div>
+  </div>
+
+  <div class="app-container">
+
+    <!-- ======================================================== -->
+    <!-- SECȚIUNEA 1: ADMINISTRARE BLOCURI & FACTURI               -->
+    <!-- ======================================================== -->
+    <div class="main-section active" id="sec-blocuri">
+      <div id="view-blocuri" style="display:flex; width:100%;">
+      <!-- SIDEBAR BLOCURI -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2 onclick="showDashboard()" style="cursor:pointer;" title="Mergi la Panoul Principal">🏠 Panou & Lista Blocurilor</h2>
+          <p id="sidebar-asociatie-name">TEST ADMINISTRATORI</p>
+        </div>
+        <div class="bloc-list" id="bloc-list">
+          <!-- Populat din JS -->
+        </div>
+        <div class="sidebar-footer">
+          <button class="add-bloc-btn" onclick="showAddBlocModal()">+ Adaugă Bloc</button>
+        </div>
+      </aside>
+
+      <!-- MAIN CONTENT BLOC -->
+      <main class="main-content" id="main-content">
+        <!-- Default: Dashboard -->
+        <div id="dashboard-page">
+          <div class="page-header">
+            <div>
+              <h1>Panou Principal & Operațiuni Asociație</h1>
+              <p class="page-header-subtitle" id="dashboard-asoc-subtitle">Asociația de Proprietari ORHIDEEA / TEST ADMINISTRATORI</p>
+            </div>
+            <div class="page-header-actions">
+              <button class="btn btn-secondary btn-small" onclick="showDateGeneraleModal()">⚙️ Date Generale Lună (ADG)</button>
+              <button class="btn btn-secondary btn-small" onclick="showFacturiAsociatieModal()">📑 Facturi Asociație (ADA)</button>
+              <button class="btn btn-warning btn-small" onclick="runCalculSUM()">🧮 Calcul Complet (SUM)</button>
+              <button class="btn btn-secondary btn-small" onclick="switchMainSection('rapoarte')">📊 Catalog 35 Rapoarte</button>
+              <button class="btn btn-primary btn-small" onclick="switchMainSection('casierie')">🧾 Încasează / Taie Chitanță</button>
+            </div>
+          </div>
+          <div class="stat-cards" id="stat-cards">
+            <!-- Populated by JS -->
+          </div>
+
+          <!-- BARĂ MOTOR CALCUL FOXPRO (TCE / CRE / SUM / TRE) -->
+          <div class="card" style="margin-top: 1.5rem; border-left: 4px solid #f59e0b;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+              <h3>⚡ Motor Calcul Lunar FoxPro 2005 (TCE ➔ CRE ➔ SUM ➔ TRE)</h3>
+              <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button class="btn btn-small btn-secondary" onclick="runCalculTCE()">⏳ 1. Expirare Reduceri (TCE)</button>
+                <button class="btn btn-small btn-secondary" onclick="runCalculCRE()">🌡️ 2. Calcul Repartitoare (CRE)</button>
+                <button class="btn btn-small btn-warning" onclick="runCalculSUM()">🧮 3. Însumare & Calcul 8 Pași (SUM)</button>
+                <button class="btn btn-small btn-success" onclick="publicaLunaCurenta()">📤 4. Trecere Valori Plată (TRE)</button>
+              </div>
+            </div>
+            <div class="card-body" id="dashboard-calcul-status">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; font-size:0.9rem; color:#475569;">
+                <div><strong>Tarife Perioadă Activă (ADG):</strong> Apă Rece: <strong id="dash-tarif-ar">9.48</strong> lei/m³ • Canal: <strong id="dash-tarif-ca">9.67</strong> lei/m³ (<strong id="dash-proc-ca">100</strong>%) • Ultima zi: <strong id="dash-ultima-zi">2026-09-30</strong></div>
+                <div><button class="btn btn-small btn-outline" onclick="showDateGeneraleModal()">✏️ Modifică ADG</button> <button class="btn btn-small btn-outline" onclick="showFacturiAsociatieModal()">✏️ Facturi Asociație (ADA)</button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top: 1.5rem;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h3>ℹ️ Informații Asociație (Echivalent Meniu FoxPro: B) Actualizare Date Asociații — ADA)</h3>
+              <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-small btn-secondary" onclick="showFacturiAsociatieModal()">📑 Valori Facturi Asociație (ADA)</button>
+                <button class="btn btn-small btn-secondary" onclick="showEditAsociatieModal()">✏️ Editează Date Asociație</button>
+              </div>
+            </div>
+            <div class="card-body" id="asociatie-info">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloc detail page (hidden by default) -->
+        <div id="bloc-page" style="display:none;">
+          <div class="page-header">
+            <div>
+              <h1 id="bloc-title">Bloc</h1>
+              <p class="page-header-subtitle" id="bloc-subtitle"></p>
+            </div>
+            <div class="page-header-actions">
+              <button class="btn btn-warning btn-small" onclick="runCalculSUM()">🧮 Calculează (SUM)</button>
+              <button class="btn btn-secondary btn-small" onclick="deschideAvizierBlocCurent()">📋 Vezi Avizier Bloc</button>
+              <button class="btn btn-danger btn-small" onclick="deleteBlocConfirm()">🗑️ Șterge Bloc</button>
+            </div>
+          </div>
+
+          <!-- TABS BLOC -->
+          <div class="tabs">
+            <button class="tab active" onclick="switchTab('indecsi', this)">💧 Indecși & Pierderi Apă (AIA)</button>
+            <button class="tab" onclick="switchTab('apartamente', this)">🏠 Apartamente & Locatari (APS)</button>
+            <button class="tab" id="tab-btn-repartitoare" onclick="switchTab('repartitoare', this)">🔥 Repartitoare, Reduceri & Procente (ARA/TCE/ADC)</button>
+            <button class="tab" onclick="switchTab('facturi', this)">📑 Facturi & Repartizare</button>
+            <button class="tab" onclick="switchTab('setari', this)">⚙️ Setări, Facturi & Parametri Bloc (ADB/ADR)</button>
+          </div>
+
+          <!-- TAB 1: Indecși -->
+          <div class="tab-content active" id="tab-indecsi">
+            <!-- Contor General Bloc -->
+            <div class="card">
+              <div class="card-header">
+                <h3>Contoare Generale Bloc (Echivalent FoxPro: E) Indexuri Contoare)</h3>
+              </div>
+              <div class="card-body">
+                <div class="index-grid">
+                  <div class="index-group">
+                    <h4>💧 Apă Rece (Branșament)</h4>
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label class="form-label">Index Vechi (m³)</label>
+                        <input type="number" class="form-input" id="idx-ar-vechi" step="1">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Index Nou (m³)</label>
+                        <input type="number" class="form-input" id="idx-ar-nou" step="1">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Consum Bloc</label>
+                        <input type="text" class="form-input" id="idx-ar-consum" readonly>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="index-group">
+                    <h4>🔥 Apă Caldă</h4>
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label class="form-label">Index Vechi</label>
+                        <input type="number" class="form-input" id="idx-ac-vechi" step="1">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Index Nou</label>
+                        <input type="number" class="form-input" id="idx-ac-nou" step="1">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Consum</label>
+                        <input type="text" class="form-input" id="idx-ac-consum" readonly>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="index-group">
+                    <h4>🌡️ Încălzire</h4>
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label class="form-label">Index Vechi</label>
+                        <input type="number" class="form-input" id="idx-in-vechi" step="0.001">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Index Nou</label>
+                        <input type="number" class="form-input" id="idx-in-nou" step="0.001">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Consum</label>
+                        <input type="text" class="form-input" id="idx-in-consum" readonly>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div style="margin-top: 1rem; text-align: right;">
+                  <button class="btn btn-primary" onclick="saveIndecsiBloc()">💾 Salvează Indecși Bloc</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card Calcul & Repartizare Diferențe Apă Rece (DIFARAR) -->
+            <div class="card" style="margin-top: 1.5rem; border-left: 4px solid var(--primary-color);">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>⚡ Diferențe Contor General Apă Rece (Echivalent FoxPro: DIFARAR)</h3>
+                <button class="btn btn-warning" onclick="repartizeazaDiferenteApa()">⚡ Calculează & Repartizează Diferența pe Bloc</button>
+              </div>
+              <div class="card-body">
+                <p style="color:var(--text-secondary); margin-bottom: 1rem; font-size:0.9rem;">
+                  Sistemul calculează automat diferența dintre consumul contorului de branșament al blocului și suma apometrelor din apartamente, repartizând-o conform opțiunii alese în setările blocului (pe consum sau pe număr de persoane).
+                </p>
+                <div class="diferenta-stats" id="diferenta-apa-stats">
+                  <!-- Populat din JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Indecși individuali apartamente -->
+            <div class="card" style="margin-top: 1.5rem;">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>Apometre & Repartitoare Apartamente</h3>
+                <span class="badge badge-info">Apă Rece + Caldă (Bucătărie, Baie) & Serii R1-R7</span>
+              </div>
+              <div class="card-body">
+                <div class="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th rowspan="2">Ap.</th>
+                        <th rowspan="2">Proprietar</th>
+                        <th colspan="3">Apă Rece Buc.</th>
+                        <th colspan="3">Apă Rece Baie1</th>
+                        <th colspan="3">Apă Caldă Buc.</th>
+                        <th colspan="3">Apă Caldă Baie1</th>
+                      </tr>
+                      <tr>
+                        <th>Vechi</th><th>Nou</th><th>Cons.</th>
+                        <th>Vechi</th><th>Nou</th><th>Cons.</th>
+                        <th>Vechi</th><th>Nou</th><th>Cons.</th>
+                        <th>Vechi</th><th>Nou</th><th>Cons.</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-indecsi-apart">
+                    </tbody>
+                  </table>
+                </div>
+                <div style="margin-top: 1rem; text-align: right;">
+                  <button class="btn btn-primary" onclick="saveIndecsiApartamente()">💾 Salvează Toți Indecșii Apartamentelor</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: Apartamente -->
+          <div class="tab-content" id="tab-apartamente" style="display:none;">
+            <div class="card">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>Lista Apartamentelor & Solduri (Echivalent FoxPro: D) Pers., Supr., Proc.)</h3>
+                <button class="btn btn-success btn-small" onclick="showAddApartamentModal()">+ Adaugă Apartament</button>
+              </div>
+              <div class="card-body">
+                <div class="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nr. Ap.</th>
+                        <th>Proprietar</th>
+                        <th>Persoane</th>
+                        <th>Suprafață (mp)</th>
+                        <th>Restanțe</th>
+                        <th>Penalități</th>
+                        <th>Fond Repar.</th>
+                        <th>Acțiuni</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-apartamente">
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2B: Repartitoare, Reduceri, 16 Procente & Metrologie (ARA / TCE / APS / ADC) -->
+          <div class="tab-content" id="tab-repartitoare" style="display:none;">
+            <!-- Bară Acțiuni Rapide Calcul (TCE, CRE, SUM) -->
+            <div class="card" style="margin-bottom: 1.5rem; border-left: 4px solid #ea580c;">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+                <div>
+                  <h3>🔥 Operațiuni FoxPro: Repartitoare (ARA/CRE), Reduceri (TCE) & Metrologie (ADC)</h3>
+                  <small style="color:#64748b;">Editați direct în tabel și rulați pașii de calcul FoxPro</small>
+                </div>
+                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                  <button class="btn btn-secondary btn-small" id="btn-bloc-tce" onclick="runCalculTCE()">⏳ TCE (Expirare Reduceri)</button>
+                  <button class="btn btn-warning btn-small" id="btn-bloc-cre" onclick="runCalculCRE()">🌡️ CRE (Calcul Repartitoare)</button>
+                  <button class="btn btn-primary btn-small" id="btn-bloc-sum" onclick="runCalculSUM()">🧮 SUM (Calcul Întreținere Complet)</button>
+                </div>
+              </div>
+              <div class="card-body" id="repartitoare-calc-feedback" style="padding: 0.85rem 1.5rem; background:#fff7ed; font-size:0.88rem; color:#9a3412;">
+                💡 <strong>Flux FoxPro:</strong> 1) Completați indecșii R1..R7 (`ARA`) și scăderile temporare `D1..D2` (`APS`) ➔ 2) Apăsați <strong>TCE</strong> pentru expirarea cererilor vechi ➔ 3) Apăsați <strong>CRE</strong> pentru calculul Gcal din repartitoare ➔ 4) Apăsați <strong>SUM</strong> pentru calculul complet în 8 pași.
+              </div>
+            </div>
+
+            <!-- Sub-selector secțiune în tab-ul Repartitoare & Extins -->
+            <div style="display:flex; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+              <button class="btn btn-small btn-primary" id="subbtn-ara" onclick="switchRepartitoareSubView('ara')">🌡️ 1. Repartitoare Căldură R1–R7 (ARA)</button>
+              <button class="btn btn-small btn-secondary" id="subbtn-tce" onclick="switchRepartitoareSubView('tce')">⏳ 2. Reduceri Temporare & Sume Manuale (TCE / APS)</button>
+              <button class="btn btn-small btn-secondary" id="subbtn-proc" onclick="switchRepartitoareSubView('proc')">📊 3. Cele 16 Procente & Metrologie Contoare (APS / ADC)</button>
+            </div>
+
+            <!-- SUB-VIEW 1: ARA (7 Repartitoare R1..R7) -->
+            <div class="card" id="subview-ara">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>🌡️ Repartitoare Căldură R1..R7 & Calcul Gcal (Echivalent FoxPro: F) ARA.PRG & CRE.PRG)</h3>
+                <button class="btn btn-primary btn-small" onclick="saveAllRepartitoareARA()">💾 Salvează Repartitoare (ARA)</button>
+              </div>
+              <div class="card-body">
+                <div class="table-container" style="overflow-x:auto;">
+                  <table class="table-compact">
+                    <thead>
+                      <tr>
+                        <th>Ap.</th>
+                        <th>Proprietar</th>
+                        <th>Mod (CP_IN)</th>
+                        <th>Supr. (mp)</th>
+                        <th>SET (mp)</th>
+                        <th>R1 (Vechi / Nou / Coef)</th>
+                        <th>R2 (Vechi / Nou / Coef)</th>
+                        <th>R3 (Vechi / Nou / Coef)</th>
+                        <th>R4 (Vechi / Nou)</th>
+                        <th>R5 (Vechi / Nou)</th>
+                        <th>R6 (Vechi / Nou)</th>
+                        <th>R7 (Vechi / Nou)</th>
+                        <th>Tot. Unit.</th>
+                        <th>Gcal Final</th>
+                        <th>Detalii R1-R7</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-repartitoare-ara">
+                      <!-- Populat din JS -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- SUB-VIEW 2: TCE / APS (Reduceri Temporare D1, D2, P1_SCAZ, SL1_SCAZ & Cheltuieli Manuale) -->
+            <div class="card" id="subview-tce" style="display:none;">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>⏳ Reduceri Temporare (D1, D2, P1_SCAZ, SL1_SCAZ) & Cheltuieli Manuale (TCE / APS)</h3>
+                <div style="display:flex; gap:0.5rem;">
+                  <button class="btn btn-warning btn-small" onclick="runCalculTCE()">⏳ Expiră Cereri Vechi (TCE)</button>
+                  <button class="btn btn-primary btn-small" onclick="saveAllReduceriTCE()">💾 Salvează Reduceri & Sume Manuale</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="table-container" style="overflow-x:auto;">
+                  <table class="table-compact">
+                    <thead>
+                      <tr>
+                        <th>Ap.</th>
+                        <th>Proprietar</th>
+                        <th>Pers.</th>
+                        <th>D1 (De la)</th>
+                        <th>D2 (Până la)</th>
+                        <th>P1_SCAZ</th>
+                        <th>P2_SCAZ</th>
+                        <th>SL1_SCAZ (mp)</th>
+                        <th>SL2_SCAZ (mp)</th>
+                        <th>SET_SCAZ</th>
+                        <th>Max FR</th>
+                        <th>Fond Repar (A)</th>
+                        <th>Boxă / Havuz</th>
+                        <th>Rep.Crt / Altele</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-reduceri-tce">
+                      <!-- Populat din JS -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- SUB-VIEW 3: APS 16 Procente & ADC Verificări Metrologice -->
+            <div class="card" id="subview-proc" style="display:none;">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>📊 Cele 16 Procente pe Apartament (APS) & Date Verificare Metrologică Contoare (ADC)</h3>
+                <button class="btn btn-primary btn-small" onclick="saveAllProcenteMetrologie()">💾 Salvează Procente & Metrologie (APS/ADC)</button>
+              </div>
+              <div class="card-body">
+                <div class="table-container" style="overflow-x:auto;">
+                  <table class="table-compact">
+                    <thead>
+                      <tr>
+                        <th>Ap.</th>
+                        <th>Proprietar</th>
+                        <th>% Av.AC</th>
+                        <th>% Av.IN</th>
+                        <th>% Gaz</th>
+                        <th>% Gunoi</th>
+                        <th>% Lift</th>
+                        <th>% Cur.Sc</th>
+                        <th>% Cur.Li</th>
+                        <th>% Sal.F</th>
+                        <th>% Sal.T</th>
+                        <th>% Abon</th>
+                        <th>% Ch.Adm</th>
+                        <th>% Dif.Apă</th>
+                        <th>% Dif.Înc</th>
+                        <th>% Sediu</th>
+                        <th>Exp. Metr. AR Buc (D_V_AR_BU)</th>
+                        <th>Exp. Metr. AR Baie1 (D_V_AR_BA1)</th>
+                        <th>Exp. Metr. AC Buc (D_V_AC_BU)</th>
+                        <th>Exp. Metr. AC Baie1 (D_V_AC_BA1)</th>
+                        <th>Toate (16% + 7 Contoare)</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-procente-metrologie">
+                      <!-- Populat din JS -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: Facturi -->
+          <div class="tab-content" id="tab-facturi" style="display:none;">
+            <div class="card">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>Facturi & Cheltuieli (Echivalent FoxPro: Facturi Bloc / Asociație)</h3>
+                <button class="btn btn-success btn-small" onclick="showAddFacturaModal()">+ Adaugă Factură</button>
+              </div>
+              <div class="card-body">
+                <div id="facturi-list">
+                  <!-- Populat din JS -->
+                </div>
+              </div>
+            </div>
+            <div class="card" style="margin-top: 1.5rem;">
+              <div class="card-header"><h3>Vizualizare Repartizare pe Apartamente</h3></div>
+              <div class="card-body" id="repartizare-container">
+                <div class="empty-state">Selectați o factură din tabelul de mai sus pentru a vizualiza cotele repartizate pe fiecare apartament.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: Setări Bloc (ADB & ADR Extins) -->
+          <div class="tab-content" id="tab-setari" style="display:none;">
+            <div class="card">
+              <div class="card-header"><h3>⚙️ Setări, Parametri Termici, Moduri & Facturi Bloc (FoxPro: ADB.PRG & ADR.PRG)</h3></div>
+              <div class="card-body">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Cod Bloc (BLOC)</label>
+                    <input type="text" class="form-input" id="set-bloc">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Strada (ADR)</label>
+                    <input type="text" class="form-input" id="set-strada">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Număr (ADR)</label>
+                    <input type="text" class="form-input" id="set-numar">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Cod Poștal (COD)</label>
+                    <input type="text" class="form-input" id="set-cod-postal" placeholder="ex: 700000">
+                  </div>
+                </div>
+
+                <h4 style="margin-top: 1.25rem;">Tarife Utilități & Parametri Termici Bloc (ADB)</h4>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Tarif Apă Rece (lei/m³)</label>
+                    <input type="number" class="form-input" id="set-tarif-ar" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Tarif Canalizare (lei/m³)</label>
+                    <input type="number" class="form-input" id="set-tarif-canal" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Tarif Apă Caldă (lei/m³)</label>
+                    <input type="number" class="form-input" id="set-tarif-ac" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Tarif Energie Termică TARIF_ET (lei/Gcal)</label>
+                    <input type="number" class="form-input" id="set-tarif-et" step="0.01">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Ecart Temperatură (ECART_TEMP °C)</label>
+                    <input type="number" class="form-input" id="set-ecart-temp" step="0.1">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Randament Termic (RAND_TR %)</label>
+                    <input type="number" class="form-input" id="set-rand-tr" step="0.1">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Constantă Contor Încălzire (CONSTIN)</label>
+                    <input type="number" class="form-input" id="set-constin" step="0.001">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">% Încălzire Comună (PROCINCCOM)</label>
+                    <input type="number" class="form-input" id="set-procinccom" step="0.1">
+                  </div>
+                </div>
+
+                <h4 style="margin-top: 1.25rem;">Moduri Contorizare & Repartizare Diferențe (ADB)</h4>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Apă Rece (CP_AR)</label>
+                    <select class="form-select" id="set-cp-ar">
+                      <option value="C">C — Contorizat pe Bloc</option>
+                      <option value="P">P — Paușal / Asociație</option>
+                      <option value="S">S — Cotă parte (suprafață)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Apă Caldă (CP_AC)</label>
+                    <select class="form-select" id="set-cp-ac">
+                      <option value="C">C — Contorizat pe Bloc</option>
+                      <option value="P">P — Paușal / Asociație</option>
+                      <option value="S">S — Cotă parte (suprafață)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Încălzire (CP_IN)</label>
+                    <select class="form-select" id="set-cp-in">
+                      <option value="C">C — Contorizat pe Bloc</option>
+                      <option value="P">P — Paușal / Asociație</option>
+                      <option value="S">S — Cotă parte (suprafață)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Mod Rep. Diferențe Apă (MOD_R_DIF)</label>
+                    <select class="form-select" id="set-mod-r-dif">
+                      <option value="PER">PER — Proporțional cu Persoanele</option>
+                      <option value="CNS">CNS — Proporțional cu Consumul</option>
+                      <option value="APT">APT — Egal pe Apartament</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Mod Rep. Încălzire (MOD_R_INC)</label>
+                    <select class="form-select" id="set-mod-r-inc">
+                      <option value="SL">SL — Suprafață Locuibilă</option>
+                      <option value="SET">SET — Suprafață Echiv. Termică</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Mod Rep. Dif. Încălzire (MODR_DIFIN)</label>
+                    <select class="form-select" id="set-modr-difin">
+                      <option value="SL">SL — Suprafață Locuibilă</option>
+                      <option value="SET">SET — Suprafață Echiv. Termică</option>
+                      <option value="CNS">CNS — Proporțional cu Consumul</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Mod Rep. Ascensor (MOD_R_ASC)</label>
+                    <select class="form-select" id="set-mod-r-asc">
+                      <option value="PER">PER — Pe Persoane</option>
+                      <option value="APT">APT — Pe Apartament</option>
+                      <option value="SUP">SUP — Pe Suprafață</option>
+                    </select>
+                  </div>
+                </div>
+
+                <h4 style="margin-top: 1.25rem;">Valori Facturi Lunare pe Bloc (ADB — RON)</h4>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Gaz (GAZ)</label>
+                    <input type="number" class="form-input" id="set-fact-gaz" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Gunoi (GUNOI)</label>
+                    <input type="number" class="form-input" id="set-fact-gunoi" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Curent Scară (CURENT_SC)</label>
+                    <input type="number" class="form-input" id="set-fact-curent-sc" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Curent Lift (CURENT_LI)</label>
+                    <input type="number" class="form-input" id="set-fact-curent-li" step="0.01">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Întreținere Ascensor (ASCENSOR)</label>
+                    <input type="number" class="form-input" id="set-fact-ascensor" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Salariu Femeie Serv. (SAL_FEME)</label>
+                    <input type="number" class="form-input" id="set-fact-sal-feme" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Salariu TESA / Admin (SAL_TESA)</label>
+                    <input type="number" class="form-input" id="set-fact-sal-tesa" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Chelt. Admin (CH_ADMIN)</label>
+                    <input type="number" class="form-input" id="set-fact-ch-admin" step="0.01">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Chelt. Sediu (CH_SEDIU)</label>
+                    <input type="number" class="form-input" id="set-fact-ch-sediu" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Prestări Servicii (PREST_SERV)</label>
+                    <input type="number" class="form-input" id="set-fact-prest-serv" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Chelt. Încălzire (CHELT_INC)</label>
+                    <input type="number" class="form-input" id="set-fact-chelt-inc" step="0.01">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Canal Meteo (CAN_MET)</label>
+                    <input type="number" class="form-input" id="set-fact-can-met" step="0.01">
+                  </div>
+                </div>
+
+                <h4 style="margin-top: 1.25rem;">Procente & Cote Repartizare Bloc (ADB)</h4>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">% Salariu Femeie Serviciu</label>
+                    <input type="number" class="form-input" id="set-proc-sal-f" min="0" max="100">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">% Salariu Tesa / Conducere</label>
+                    <input type="number" class="form-input" id="set-proc-sal-t" min="0" max="100">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">% Gunoi</label>
+                    <input type="number" class="form-input" id="set-proc-gunoi" min="0" max="100">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Cotă Fond Rulment / Reparații (COTA_FR)</label>
+                    <input type="number" class="form-input" id="set-cota-fr" step="0.01">
+                  </div>
+                </div>
+                <div style="margin-top: 1rem; text-align: right;">
+                  <button class="btn btn-primary" onclick="saveSetariBloc()">💾 Salvează Toate Setările & Facturile Blocului (ADB/ADR)</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECȚIUNEA 2: AVIZIER / LISTĂ PLATĂ (ECHIVALENT LAR.PRG)   -->
+    <!-- ======================================================== -->
+    <div class="main-section" id="sec-avizier" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>📋 Lista de Plată a Cotelor de Întreținere (Format Avizier Scară)</h1>
+          <p class="page-header-subtitle">Echivalent Meniu FoxPro: [Listare -> D) LISTE DE AFISAT CU RESTANTE] (LAR.PRG)</p>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-primary" onclick="printAvizier()">🖨️ Tipărește Tabel Avizier (Print / PDF)</button>
+          <button class="btn btn-secondary" onclick="exportAvizierCSV()">📥 Descarcă Excel (CSV)</button>
+        </div>
+      </div>
+
+      <!-- Filtre Avizier -->
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="card-body">
+          <div class="form-row" style="align-items:flex-end;">
+            <div class="form-group">
+              <label class="form-label">Selectează Blocul *</label>
+              <select class="form-select" id="avizier-bloc-select" onchange="loadListaPlataAvizier()">
+                <!-- Populat din JS -->
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Luna</label>
+              <select class="form-select" id="avizier-luna-select" onchange="loadListaPlataAvizier()">
+                <option value="1">Ianuarie</option>
+                <option value="2">Februarie</option>
+                <option value="3">Martie</option>
+                <option value="4">Aprilie</option>
+                <option value="5">Mai</option>
+                <option value="6">Iunie</option>
+                <option value="7">Iulie</option>
+                <option value="8">August</option>
+                <option value="9" selected>Septembrie</option>
+                <option value="10">Octombrie</option>
+                <option value="11">Noiembrie</option>
+                <option value="12">Decembrie</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Anul</label>
+              <input type="number" class="form-input" id="avizier-an-select" value="2026" onchange="loadListaPlataAvizier()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Termen de Plată (Zile)</label>
+              <input type="number" class="form-input" id="avizier-termen-zile" value="20" onchange="actualizeazaDataScadenta()">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Zonă Tabel Avizier Printabil -->
+      <div class="card printable-card" id="printable-avizier">
+        <div class="card-body">
+          <div class="avizier-header-box" id="avizier-header-box">
+            <!-- Header oficial printabil -->
+          </div>
+
+          <div class="table-container" style="overflow-x:auto;">
+            <table class="table-avizier" id="table-avizier">
+              <thead>
+                <tr>
+                  <th rowspan="2">Ap.</th>
+                  <th rowspan="2">Pers.</th>
+                  <th rowspan="2">Suprafață (mp)</th>
+                  <th colspan="2">Apă Rece</th>
+                  <th rowspan="2">Dif. Apă</th>
+                  <th rowspan="2">Apă Caldă</th>
+                  <th rowspan="2">Încălzire</th>
+                  <th rowspan="2">Gunoi</th>
+                  <th rowspan="2">Lift</th>
+                  <th rowspan="2">Curent Comun</th>
+                  <th rowspan="2">Salarii & Admin</th>
+                  <th rowspan="2">Fond Repar.</th>
+                  <th rowspan="2">Altele</th>
+                  <th rowspan="2">Total Lună</th>
+                  <th rowspan="2">Restanțe Anterioare</th>
+                  <th rowspan="2">Penalități</th>
+                  <th rowspan="2" class="th-total-plata">TOTAL DE PLATĂ (LEI)</th>
+                </tr>
+                <tr>
+                  <th>Consum (m³)</th>
+                  <th>Valoare (lei)</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-avizier">
+                <!-- Populat din JS -->
+              </tbody>
+              <tfoot id="tfoot-avizier">
+                <!-- Rânduri totaluri din JS -->
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="avizier-signatures" id="avizier-signatures">
+            <div class="sig-box">
+              <strong>Președinte Asociație</strong>
+              <p id="sig-presedinte">PINCA ION</p>
+            </div>
+            <div class="sig-box">
+              <strong>Administrator</strong>
+              <p id="sig-administrator">DORNESCU CRINELA</p>
+            </div>
+            <div class="sig-box">
+              <strong>Cenzor / Comisie</strong>
+              <p>Verificat și aprobat</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECȚIUNEA 3: CASIERIE & CHITANȚE (CHI.PRG & CHO.FXP)      -->
+    <!-- ======================================================== -->
+    <div class="main-section" id="sec-casierie" style="display:none;">
+      <div id="view-chitante">
+        <div class="page-header">
+          <div>
+            <h1>🧾 Modul Casierie, Registru Datorii & Chitanțe (CHI & CHO)</h1>
+            <p class="page-header-subtitle">Echivalent FoxPro: [Centralizare -> A) TAIE CHITANTE INDIVIDUALE (CHI.PRG) & B) CHITANTE COLECTIVE / DESCARCARE FOND (CHO.FXP)]</p>
+          </div>
+          <div class="page-header-actions">
+            <button class="btn btn-warning" id="btn-open-cho" onclick="showModal('modal-chitanta-colectiva')">🏢 Chitanță Colectivă / Descărcare Fond (CHO)</button>
+            <button class="btn btn-secondary" onclick="loadChitante()">🔄 Reîmprospătează Jurnal</button>
+          </div>
+        </div>
+
+        <div class="casierie-layout">
+          <!-- Formular Emitere Chitanță Individuală (CHI) + Registru Datorii R/F/A/P -->
+          <div class="card" style="flex:1.25;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+              <h3>📝 Emitere Chitanță Individuală (CHI) & Registru Cumulativ Datorii (R, F, A, P)</h3>
+              <span class="badge badge-primary" id="cas-ordine-badge">Ordine Alocare: P ➔ A ➔ F ➔ R (Cea mai veche lună)</span>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Bloc *</label>
+                  <select class="form-select" id="cas-bloc-select" onchange="onCasierieBlocChange()">
+                    <!-- Populat din JS -->
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Apartament *</label>
+                  <select class="form-select" id="cas-apart-select" onchange="onCasierieApartChange()">
+                    <option value="">-- Alege Apartament --</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Data Emiterii / Calcul Penalități</label>
+                  <input type="date" class="form-input" id="cas-data" onchange="onCasierieApartChange()">
+                </div>
+              </div>
+
+              <!-- Card Datorie Apartament Curent (R, F, A, P) -->
+              <div class="debt-box" id="cas-debt-box" style="display:none;">
+                <div class="debt-header">
+                  <div>
+                    <h4 id="cas-debt-proprietar">-</h4>
+                    <span class="badge badge-info" id="cas-debt-details">Ap. - • - Persoane</span>
+                  </div>
+                  <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                    <button class="btn btn-small btn-warning" id="btn-book-penalties" onclick="inregistreazaPenalitatiApartament()" title="Calculează și înregistrează idempotent rândurile P în tabelul datorii">
+                      ⚖️ Înregistrează Penalități (P)
+                    </button>
+                    <button class="btn btn-small btn-success" onclick="achitaIntegralApartament()" title="Completează automat tot soldul restant">
+                      💯 Achită Tot Soldul
+                    </button>
+                  </div>
+                </div>
+                <div class="debt-breakdown">
+                  <div class="debt-item">
+                    <span class="label">Regie (R):</span>
+                    <span class="val" id="cas-debt-regie">0.00 RON</span>
+                  </div>
+                  <div class="debt-item">
+                    <span class="label">Fond Rulment (F):</span>
+                    <span class="val" id="cas-debt-rulment">0.00 RON</span>
+                  </div>
+                  <div class="debt-item">
+                    <span class="label">Fond Reparații (A):</span>
+                    <span class="val" id="cas-debt-reparatii">0.00 RON</span>
+                  </div>
+                  <div class="debt-item">
+                    <span class="label">Restanțe Totale:</span>
+                    <span class="val" id="cas-debt-restante">0.00 RON</span>
+                  </div>
+                  <div class="debt-item">
+                    <span class="label">Penalități Înreg. (P):</span>
+                    <span class="val" id="cas-debt-penalizari">0.00 RON</span>
+                  </div>
+                  <div class="debt-item highlight">
+                    <span class="label">Total Datorat la Zi (HJKG):</span>
+                    <span class="val" id="cas-debt-total">0.00 RON</span>
+                  </div>
+                </div>
+
+                <!-- Live On-Demand Penalty Preview -->
+                <div id="cas-penalty-preview-box" style="margin-top:0.75rem; padding:0.65rem 0.85rem; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; font-size:0.85rem; color:#92400e;">
+                  ⚖️ <strong>Previzualizare Penalități la Zi (CHI.PRG Lpenal):</strong> <span id="cas-penalty-preview-text">Se calculează...</span>
+                </div>
+
+                <!-- Tabel Rânduri Datorii Cumulative (R, F, A, P) -->
+                <div style="margin-top:0.85rem;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem; flex-wrap:wrap; gap:0.5rem;">
+                    <strong style="font-size:0.88rem; color:#1e293b;">📋 Rânduri Datorii Neachitate în Registru (`datorii` — R, F, A, P):</strong>
+                    <div style="display:flex; gap:0.75rem; align-items:center; font-size:0.85rem;">
+                      <label style="cursor:pointer; display:flex; align-items:center; gap:0.25rem;">
+                        <input type="radio" name="cas-mod-alocare" value="LUMP_SUM" checked onchange="onChangeModAlocareCasierie()">
+                        <span><strong>Sumă Globală</strong> (Automat P➔A➔F➔R)</span>
+                      </label>
+                      <label style="cursor:pointer; display:flex; align-items:center; gap:0.25rem;">
+                        <input type="radio" name="cas-mod-alocare" value="MANUAL" onchange="onChangeModAlocareCasierie()">
+                        <span><strong>Selecție Manuală pe Rând</strong></span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="table-container" style="max-height:240px; overflow-y:auto; margin-bottom:0;">
+                    <table class="table-compact">
+                      <thead>
+                        <tr>
+                          <th>Perioada</th>
+                          <th>Cat.</th>
+                          <th>Valoare</th>
+                          <th>Achitat</th>
+                          <th>Restanță</th>
+                          <th>Alocare Plată (RON)</th>
+                        </tr>
+                      </thead>
+                      <tbody id="tbl-casierie-ledger">
+                        <tr><td colspan="6" class="text-center">Selectați un apartament pentru a vedea rândurile R, F, A, P.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-row" style="margin-top: 1rem;">
+                <div class="form-group">
+                  <label class="form-label">Suma Încasată (RON) *</label>
+                  <input type="number" class="form-input" id="cas-suma" step="0.01" min="0.01" oninput="updateSumaLiterePreview()" placeholder="ex: 150.00">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Tip Încasare / Sursă</label>
+                  <select class="form-select" id="cas-tip-plata">
+                    <option value="NUMERAR">Numerar — Casierie (CASA)</option>
+                    <option value="BANCA">Transfer Bancar / OP (BANCA)</option>
+                    <option value="CARD">Card POS (BANCA)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Suma în litere (generată automat în limba română):</label>
+                <div class="suma-litere-preview" id="cas-suma-litere">Introduceți suma mai sus...</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Explicație Plată (Auto-CEX FoxPro 15 ramuri sau personalizat)</label>
+                <input type="text" class="form-input" id="cas-explicatie" value="" placeholder="Lăsați gol pentru generare automată CEX (ex: REGIE, FOND REPARATII SI PENALITATI)">
+              </div>
+
+              <div style="margin-top: 1.25rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+                <button class="btn btn-warning btn-small" onclick="showModal('modal-chitanta-colectiva')">
+                  🏢 Deschide Chitanță Colectivă / Descărcare Fond (CHO)
+                </button>
+                <button class="btn btn-primary" onclick="emiteChitantaNoua()" style="padding:0.75rem 1.5rem; font-size:1rem;">
+                  💾 Salvează & Emite Chitanță (CHI)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Jurnal / Istoric Chitanțe Emise -->
+          <div class="card" style="flex:1;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h3>📋 Jurnal Chitanțe Emise (Individuale & Colective)</h3>
+              <button class="btn btn-small btn-secondary" onclick="loadChitante()">🔄 Reîmprospătează</button>
+            </div>
+            <div class="card-body">
+              <div class="table-container" style="max-height: 620px; overflow-y:auto;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Chitanța Nr.</th>
+                      <th>Data</th>
+                      <th>Locatar / Bloc</th>
+                      <th>Suma</th>
+                      <th>Tip</th>
+                      <th>Stare</th>
+                      <th>Acțiuni</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbl-chitante">
+                    <!-- Populat din JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECȚIUNEA 3B: CATALOG 35 RAPOARTE FOXPRO (#view-rapoarte)  -->
+    <!-- ======================================================== -->
+    <div class="main-section" id="sec-rapoarte" style="display:none;">
+      <div id="view-rapoarte">
+        <div class="page-header">
+          <div>
+            <h1>📊 Catalog Complet 35 Rapoarte FoxPro (Listare A–P, Situații A–Q, Centralizare IN1/IN2)</h1>
+            <p class="page-header-subtitle">Toate cele 35 de rapoarte oficiale ORHIDEEA 2005 cu filtrare pe bloc/apartament, protecție GDPR avizier, tipărire A4/Landscape și export CSV</p>
+          </div>
+          <div class="page-header-actions">
+            <button class="btn btn-primary" id="btn-print-raport" onclick="printCurrentReport()">🖨️ Tipărește A4/Landscape</button>
+            <button class="btn btn-success" id="btn-export-raport-csv" onclick="exportCurrentReportCSV()">📥 Export CSV</button>
+          </div>
+        </div>
+
+        <div class="rapoarte-layout">
+          <!-- Sidebar Catalog 35 Rapoarte -->
+          <aside class="rapoarte-sidebar card">
+            <div class="card-header" style="padding:0.85rem 1rem;">
+              <input type="text" class="form-input" id="rapoarte-search-input" placeholder="🔍 Caută raport (ex: LAR, RE1, SBL, CCA)..." oninput="filterReportCatalogSidebar(this.value)">
+            </div>
+            <div class="rapoarte-catalog-list" id="rapoarte-catalog-list">
+              <!-- Populat din JS: Listare (16), Situatii (17), Centralizare (2) -->
+            </div>
+          </aside>
+
+          <!-- Zonă Filtre + Tabel Dinamic Raport -->
+          <div class="rapoarte-main">
+            <!-- Bară Filtre & GDPR Toggle -->
+            <div class="card" style="margin-bottom:1rem;">
+              <div class="card-body" style="padding:1rem 1.25rem;">
+                <div class="form-row" style="align-items:flex-end;">
+                  <div class="form-group" style="min-width:160px;">
+                    <label class="form-label">Filtru Bloc</label>
+                    <select class="form-select" id="rapoarte-bloc-select" onchange="onRapoarteBlocChange()">
+                      <option value="">Toate Blocurile</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="min-width:160px;">
+                    <label class="form-label">Filtru Apartament</label>
+                    <select class="form-select" id="rapoarte-apart-select" onchange="reloadCurrentReport()">
+                      <option value="">Toate Apartamentele</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="min-width:140px;">
+                    <label class="form-label">Dată Calcul / Referință</label>
+                    <input type="date" class="form-input" id="rapoarte-data-calcul" onchange="reloadCurrentReport()">
+                  </div>
+                  <div class="form-group" style="flex:1.5; min-width:260px;">
+                    <label class="gdpr-toggle-box" for="rapoarte-gdpr-toggle">
+                      <input type="checkbox" id="rapoarte-gdpr-toggle" onchange="reloadCurrentReport()">
+                      <span>🔓 <strong>Afișează numele proprietarilor (uz intern)</strong></span>
+                    </label>
+                    <small id="rapoarte-gdpr-hint" style="color:#64748b; font-size:0.76rem;">
+                      Implicit debifat pe listele de avizier (LAF, LAR, LP1, LP2, LPP, MAX) conform GDPR.
+                    </small>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card Raport Printabil -->
+            <div class="card printable-card" id="printable-raport">
+              <div class="card-body">
+                <div class="avizier-header-box" id="raport-header-box">
+                  <!-- Populat din JS -->
+                </div>
+
+                <div class="table-container" style="overflow-x:auto;">
+                  <table class="table-avizier" id="table-raport-dinamic">
+                    <thead id="thead-raport-dinamic"></thead>
+                    <tbody id="tbody-raport-dinamic"></tbody>
+                    <tfoot id="tfoot-raport-dinamic"></tfoot>
+                  </table>
+                </div>
+
+                <div class="avizier-signatures" id="raport-signatures">
+                  <div class="sig-box">
+                    <strong>Președinte Asociație</strong>
+                    <p id="raport-sig-presedinte">PINCA ION</p>
+                  </div>
+                  <div class="sig-box">
+                    <strong>Administrator</strong>
+                    <p id="raport-sig-administrator">DORNESCU CRINELA</p>
+                  </div>
+                  <div class="sig-box">
+                    <strong>Cenzor / Comisie</strong>
+                    <p>Verificat și aprobat</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECȚIUNEA 3C: REGISTRE FINANCIARE & RAW DB (#view-registre) -->
+    <!-- ======================================================== -->
+    <div class="main-section" id="sec-registre" style="display:none;">
+      <div id="view-registre">
+        <div class="page-header">
+          <div>
+            <h1>📒 Registre Financiare & Audit Date Brute (ACA, ABA, APA, ORD, AVS/AVB/AVA)</h1>
+            <p class="page-header-subtitle">Registru de Casă, Jurnal Bancă, Situație Patrimoniu Activ/Pasiv, Ordine de Plată și Vizualizare Tabele Brute FoxPro</p>
+          </div>
+          <div class="page-header-actions">
+            <button class="btn btn-secondary btn-small" onclick="loadAllRegistre()">🔄 Reîmprospătează Registrele</button>
+          </div>
+        </div>
+
+        <!-- Tabs Registre -->
+        <div class="tabs" id="registre-tabs">
+          <button class="tab active" id="reg-tab-btn-casa" onclick="switchRegistreTab('casa', this)">💵 Registru Casă (ACA)</button>
+          <button class="tab" id="reg-tab-btn-banca" onclick="switchRegistreTab('banca', this)">🏦 Jurnal Bancă (ABA)</button>
+          <button class="tab" id="reg-tab-btn-patrimoniu" onclick="switchRegistreTab('patrimoniu', this)">🏛️ Patrimoniu Activ/Pasiv (APA)</button>
+          <button class="tab" id="reg-tab-btn-ordine" onclick="switchRegistreTab('ordine', this)">📄 Ordine de Plată (ORD)</button>
+          <button class="tab" id="reg-tab-btn-raw" onclick="switchRegistreTab('raw', this)">🗄️ Date Brute FoxPro (AVS / AVB / AVA)</button>
+        </div>
+
+        <!-- TAB 1: CASA (ACA) -->
+        <div class="reg-tab-content active" id="reg-subtab-casa">
+          <div class="casierie-layout">
+            <div class="card" style="flex:1; max-width:420px;">
+              <div class="card-header"><h3>➕ Adaugă Act de Casă (ACA)</h3></div>
+              <div class="card-body">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Document Nr.</label>
+                    <input type="text" class="form-input" id="casa-doc" placeholder="ex: CHIT / DISP-12">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Data *</label>
+                    <input type="date" class="form-input" id="casa-data">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Tip Operațiune *</label>
+                    <select class="form-select" id="casa-tip">
+                      <option value="I">I — Încasare Numerar</option>
+                      <option value="P">P — Plată Numerar</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Suma (RON) *</label>
+                    <input type="number" class="form-input" id="casa-suma" step="0.01">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Activ / Pasiv (ACT_PAS)</label>
+                    <select class="form-select" id="casa-act-pas">
+                      <option value="A">A — Activ</option>
+                      <option value="P">P — Pasiv</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Explicație *</label>
+                    <input type="text" class="form-input" id="casa-explicatie" placeholder="ex: Plată factură / Încasări">
+                  </div>
+                </div>
+                <button class="btn btn-primary" style="width:100%; margin-top:0.5rem;" onclick="addActCasa()">💾 Înregistrează în Registrul de Casă</button>
+              </div>
+            </div>
+
+            <div class="card" style="flex:2;">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>💵 Operațiuni în Registrul de Casă (ACA.PRG / CCA.PRG)</h3>
+                <div id="casa-sold-badge" class="badge badge-success">Sold Casă: 0.00 RON</div>
+              </div>
+              <div class="card-body">
+                <div class="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Document</th>
+                        <th>Data</th>
+                        <th>Tip</th>
+                        <th>A/P</th>
+                        <th>Explicație</th>
+                        <th>Suma (RON)</th>
+                        <th>Acțiuni</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-reg-casa"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: BANCA (ABA) -->
+        <div class="reg-tab-content" id="reg-subtab-banca" style="display:none;">
+          <div class="casierie-layout">
+            <div class="card" style="flex:1; max-width:420px;">
+              <div class="card-header"><h3>➕ Adaugă Act de Bancă (ABA)</h3></div>
+              <div class="card-body">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Document / Extras Nr.</label>
+                    <input type="text" class="form-input" id="banca-doc" placeholder="ex: OP-15 / EXTRAS-9">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Data *</label>
+                    <input type="date" class="form-input" id="banca-data">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Tip Operațiune *</label>
+                    <select class="form-select" id="banca-tip">
+                      <option value="D">D — Depunere / Încasare Bancă</option>
+                      <option value="V">V — Virament / Plată Furnizor</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Suma (RON) *</label>
+                    <input type="number" class="form-input" id="banca-suma" step="0.01">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Activ / Pasiv</label>
+                    <select class="form-select" id="banca-act-pas">
+                      <option value="A">A — Activ</option>
+                      <option value="P">P — Pasiv</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Explicație *</label>
+                    <input type="text" class="form-input" id="banca-explicatie" placeholder="ex: Virament ApaVital / Comision">
+                  </div>
+                </div>
+                <button class="btn btn-primary" style="width:100%; margin-top:0.5rem;" onclick="addActBanca()">💾 Înregistrează în Jurnalul de Bancă</button>
+              </div>
+            </div>
+
+            <div class="card" style="flex:2;">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>🏦 Operațiuni în Contul de Bancă (ABA.PRG / CBA.PRG)</h3>
+                <div id="banca-sold-badge" class="badge badge-primary">Sold Bancă: 0.00 RON</div>
+              </div>
+              <div class="card-body">
+                <div class="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Document</th>
+                        <th>Data</th>
+                        <th>Tip (D/V)</th>
+                        <th>A/P</th>
+                        <th>Explicație</th>
+                        <th>Suma (RON)</th>
+                        <th>Acțiuni</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-reg-banca"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: PATRIMONIU (APA) -->
+        <div class="reg-tab-content" id="reg-subtab-patrimoniu" style="display:none;">
+          <div class="casierie-layout">
+            <div class="card" style="flex:1; max-width:420px;">
+              <div class="card-header"><h3>➕ Element Patrimoniu Activ/Pasiv (APA)</h3></div>
+              <div class="card-body">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Document</label>
+                    <input type="text" class="form-input" id="patr-doc" placeholder="ex: BALANTA /SOLD">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Data</label>
+                    <input type="date" class="form-input" id="patr-data">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Categorie (ACT_PAS) *</label>
+                    <select class="form-select" id="patr-act-pas">
+                      <option value="A">A — ACTIV Patrimonial</option>
+                      <option value="P">P — PASIV Patrimonial</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Suma (RON) *</label>
+                    <input type="number" class="form-input" id="patr-suma" step="0.01">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Explicație Post Patrimonial *</label>
+                  <input type="text" class="form-input" id="patr-explicatie" placeholder="ex: Fond rulment / Sold casă / Furnizori">
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Perioada</label>
+                    <input type="text" class="form-input" id="patr-perioada" placeholder="ex: SEPTEMBRIE 2026">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Data Prezentării</label>
+                    <input type="date" class="form-input" id="patr-data-pres">
+                  </div>
+                </div>
+                <button class="btn btn-primary" style="width:100%; margin-top:0.5rem;" onclick="addActPatrimoniu()">💾 Salvează Element Patrimonial</button>
+              </div>
+            </div>
+
+            <div class="card" style="flex:2;">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>🏛️ Situația Patrimonială Activ / Pasiv (APA.PRG / CP1.PRG)</h3>
+                <div id="patrimoniu-sold-badge" class="badge badge-info">Activ: 0.00 RON | Pasiv: 0.00 RON</div>
+              </div>
+              <div class="card-body">
+                <div class="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>A/P</th>
+                        <th>Document</th>
+                        <th>Data</th>
+                        <th>Explicație</th>
+                        <th>Perioada</th>
+                        <th>Suma (RON)</th>
+                        <th>Acțiuni</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-reg-patrimoniu"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: ORDINE DE PLATA (ORD) -->
+        <div class="reg-tab-content" id="reg-subtab-ordine" style="display:none;">
+          <div class="casierie-layout">
+            <div class="card" style="flex:1; max-width:460px;">
+              <div class="card-header"><h3>➕ Emite Ordin de Plată Bancar (ORD)</h3></div>
+              <div class="card-body">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Nr. Ordin *</label>
+                    <input type="number" class="form-input" id="ord-numar" value="1">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Data *</label>
+                    <input type="date" class="form-input" id="ord-data">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Suma (RON) *</label>
+                    <input type="number" class="form-input" id="ord-suma" step="0.01">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Beneficiar (Furnizor) *</label>
+                  <input type="text" class="form-input" id="ord-beneficiar" placeholder="ex: APAVITAL SA IASI / E.ON ENERGIE">
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">CUI Beneficiar</label>
+                    <input type="text" class="form-input" id="ord-codf-bene" placeholder="RO1959768">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Banca Beneficiar</label>
+                    <input type="text" class="form-input" id="ord-banca-bene" placeholder="BCR / BRD / TREZORERIE">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Cont IBAN Beneficiar</label>
+                  <input type="text" class="form-input" id="ord-cont-bene" placeholder="RO00AAAA0000000000000000">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Reprezentând (Explicație Factură)</label>
+                  <input type="text" class="form-input" id="ord-reprez1" placeholder="ex: Contravaloare factură apă / energie termică">
+                </div>
+                <button class="btn btn-primary" style="width:100%; margin-top:0.5rem;" onclick="addOrdinPlata()">💾 Salvează Ordin de Plată (ORD)</button>
+              </div>
+            </div>
+
+            <div class="card" style="flex:2;">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>📄 Registru Ordine de Plată Emise (ORD.PRG)</h3>
+                <button class="btn btn-small btn-secondary" onclick="openReportDirect('ORD')">🖨️ Tipărește din Raportul ORD</button>
+              </div>
+              <div class="card-body">
+                <div class="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nr. OP</th>
+                        <th>Data</th>
+                        <th>Plătitor</th>
+                        <th>Beneficiar</th>
+                        <th>IBAN Beneficiar</th>
+                        <th>Explicație</th>
+                        <th>Suma (RON)</th>
+                        <th>Acțiuni</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbl-reg-ordine"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 5: VIZUALIZARE DATE BRUTE (AVS / AVB / AVA) -->
+        <div class="reg-tab-content" id="reg-subtab-raw" style="display:none;">
+          <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+              <div>
+                <h3>🗄️ Vizualizare Date Brute FoxPro (AVS — Asociație, AVB — Blocuri, AVA — Apartamente, Datorii)</h3>
+                <small style="color:#64748b;">Echivalent FoxPro: Actualizare G) AVS.PRG, H) AVB.PRG, I) AVA.PRG — Audit complet pe toate coloanele DBF/SQLite</small>
+              </div>
+              <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                <select class="form-select" id="raw-table-select" style="width:auto;" onchange="loadRawAuditTable()">
+                  <option value="asociatie">AVS — Tabel ASOC (asociatie)</option>
+                  <option value="blocuri">AVB — Tabel BLOCURI (blocuri)</option>
+                  <option value="apartamente" selected>AVA — Tabel APART (apartamente)</option>
+                  <option value="datorii">CHITANTE.DBF — Tabel DATORII (datorii)</option>
+                  <option value="plati">PLĂȚI — Tabel PLATI (plati)</option>
+                  <option value="perioade">PERIOADE — Tabel PERIOADE (perioade)</option>
+                </select>
+                <button class="btn btn-secondary btn-small" onclick="loadRawAuditTable()">🔄 Încarcă</button>
+                <button class="btn btn-success btn-small" onclick="exportRawTableCSV()">📥 Export CSV</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="table-container" style="max-height:540px; overflow:auto;">
+                <table class="table-compact" id="tbl-reg-raw">
+                  <thead id="thead-reg-raw"></thead>
+                  <tbody id="tbody-reg-raw"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECȚIUNEA 4: SFÂRȘIT DE LUNĂ & PUBLICARE (TRE/GOL/SLU)     -->
+    <!-- ======================================================== -->
+    <div class="main-section" id="sec-luna" style="display:none;">
+      <div id="view-luna">
+        <div class="page-header">
+          <div>
+            <h1>📅 Ciclu Lunar FoxPro: Publicare (TRE), Anulare Publicare (GOL) & Sfârșit de Lună (SLU)</h1>
+            <p class="page-header-subtitle">Echivalent Meniu FoxPro: [Actualizare -> J) TRECERE VALORI DE PLATA (TRE), K) GOLIRE VALORI (GOL), L) SFARSIT DE LUNA (SLU)]</p>
+          </div>
+        </div>
+
+        <!-- Panou Operațiuni Ciclu Lunar (TRE / GOL / SLU / REDESCHIDERE) -->
+        <div class="card" style="border-left: 4px solid #2563eb; margin-bottom: 1.5rem;">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+            <h3>🎛️ Panou Control Perioadă Activă (TRE ➔ GOL ➔ SLU ➔ Redeschidere Audit)</h3>
+            <span class="badge badge-info" id="luna-page-status-badge" style="font-size:0.9rem; padding:0.4rem 0.8rem;">Stare Perioadă: DESCHISA</span>
+          </div>
+          <div class="card-body">
+            <div class="month-steps-grid" style="margin-bottom: 1.5rem;">
+              <div class="step-card" style="border-top: 3px solid #2563eb;">
+                <div class="step-num">J</div>
+                <h4>1. Publică Luna în Registru (TRE.PRG)</h4>
+                <p style="margin-bottom:1rem;">Îngheață snapshot-ul lunii (`apartamente_luna`, `blocuri_luna`) și înregistrează debitele `R` (Regie), `F` (Rulment) și `A` (Reparații) în `datorii`. Stare ➔ <strong>PUBLICATA</strong>.</p>
+                <button class="btn btn-primary" id="btn-tre-publica" onclick="publicaLunaCurenta()" style="width:100%;">
+                  📤 TRE — Publică Luna în Registru
+                </button>
+              </div>
+
+              <div class="step-card" style="border-top: 3px solid #f59e0b;">
+                <div class="step-num" style="background:#d97706;">K</div>
+                <h4>2. Anulează Publicarea (GOL.PRG)</h4>
+                <p style="margin-bottom:1rem;">Șterge rândurile publicate în `datorii` pentru luna curentă și readuce perioada în starea <strong>DESCHISA</strong>. Permis <em>strict</em> dacă nu s-a tăiat nicio chitanță pe această lună!</p>
+                <button class="btn btn-warning" id="btn-gol-anuleaza" onclick="anuleazaPublicareaLunii()" style="width:100%;">
+                  ⏪ GOL — Anulează Publicarea
+                </button>
+              </div>
+
+              <div class="step-card" style="border-top: 3px solid #16a34a;">
+                <div class="step-num" style="background:#16a34a;">L</div>
+                <h4>3. Închide Luna & Rotește Indecșii (SLU.PRG)</h4>
+                <p style="margin-bottom:1rem;">Arhivează luna (`INCHISA`), rotește indecșii noi în vechi (`IV = IN, IN = 0`) la blocuri, apometre și repartitoare `R1..R7`, resetează facturile lunare și deschide luna următoare.</p>
+                <button class="btn btn-success" id="btn-slu-inchide" onclick="confirmaInchidereLuna()" style="width:100%;">
+                  🔒 SLU — Închide Luna & Rotește Indecșii
+                </button>
+              </div>
+
+              <div class="step-card" style="border-top: 3px solid #9333ea;">
+                <div class="step-num" style="background:#9333ea;">↺</div>
+                <h4>4. Redeschide Luna (Audit Rollback)</h4>
+                <p style="margin-bottom:1rem;">Operațiune auditată de urgență: restaurează starea completă a ultimei luni închise din snapshot-urile imutabile (`apartamente_luna`, `blocuri_luna`).</p>
+                <button class="btn btn-secondary" id="btn-audit-redeschide" onclick="redeschideLunaAudit()" style="width:100%; border-color:#9333ea; color:#6b21a8;">
+                  🔓 Redeschide Luna (Audit)
+                </button>
+              </div>
+            </div>
+
+            <div class="alert alert-warning">
+              ⚠️ <strong>Ordinea obligatorie FoxPro:</strong> 1) Calculați luna (<strong>SUM</strong>) ➔ 2) Publicați valorile în registru (<strong>TRE</strong>) ➔ 3) Încasați chitanțele (<strong>CHI / CHO</strong>) ➔ 4) Efectuați Sfârșit de Lună (<strong>SLU</strong>).
+            </div>
+          </div>
+        </div>
+
+        <!-- Istoric Luni Încheiate -->
+        <div class="card">
+          <div class="card-header">
+            <h3>📜 Istoricul Perioadelor & Lunilor Încheiate</h3>
+          </div>
+          <div class="card-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Luna / An</th>
+                    <th>Data Închiderii / Status</th>
+                    <th>Total Cheltuieli Calculat</th>
+                    <th>Total Încasat</th>
+                    <th>Observații</th>
+                  </tr>
+                </thead>
+                <tbody id="tbl-istoric-luni">
+                  <!-- Populat din JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECȚIUNEA 5: GHID FOXPRO -> WEB                           -->
+    <!-- ======================================================== -->
+    <div class="main-section" id="sec-ghid" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>📖 Ghid de Utilizare & Manual de Tranziție de la FoxPro DOS la Aplicația Web</h1>
+          <p class="page-header-subtitle">Toate comenzile clasice FoxPro explicate pe înțelesul tuturor</p>
+        </div>
+      </div>
+
+      <div class="guide-grid">
+        <!-- Card 1: Fluxul Lunar Pas cu Pas -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <h3>🔄 Fluxul Lunar al Administratorului (Pas cu Pas)</h3>
+          </div>
+          <div class="card-body">
+            <div class="workflow-steps">
+              <div class="wf-step">
+                <span class="wf-badge">Pasul 1</span>
+                <div>
+                  <h4>1. Introducerea Indecșilor de Apă și Căldură</h4>
+                  <p>În FoxPro făceai: <code>Actualizare -> E) INDEXURI CONTOARE</code>.</p>
+                  <p>În Web: Mergi la <strong>Administrare Blocuri</strong> -> selectezi blocul din stânga -> tabul <strong>💧 Indecși & Pierderi Apă</strong> -> completezi indexul nou -> apeși <em>Salvează Toți Indecșii</em>.</p>
+                </div>
+              </div>
+              <div class="wf-step">
+                <span class="wf-badge">Pasul 2</span>
+                <div>
+                  <h4>2. Calculul Diferențelor de Contor (Pierderi de Apă)</h4>
+                  <p>În FoxPro făceai: <code>Calcul -> C) INSUMARE SI CALCUL (DIFARAR)</code>.</p>
+                  <p>În Web: În tabul <strong>💧 Indecși</strong>, apeși butonul galben <em>⚡ Calculează & Repartizează Diferența pe Bloc</em>. Sistemul scade automat consumurile din apartamente din cel general și creează cota pe locatari.</p>
+                </div>
+              </div>
+              <div class="wf-step">
+                <span class="wf-badge">Pasul 3</span>
+                <div>
+                  <h4>3. Înregistrarea Facturilor de Utilități (Gunoi, Lift, Curent, Salarii)</h4>
+                  <p>În FoxPro făceai: <code>Actualizare -> B/C) DATE ASOCIATII/BLOCURI</code>.</p>
+                  <p>În Web: Mergi în tabul <strong>📑 Facturi & Repartizare</strong> -> apeși <em>+ Adaugă Factură</em> -> alegi tipul, suma și modul de împărțire (persoane sau suprafață) -> apeși <em>Repartizează</em>.</p>
+                </div>
+              </div>
+              <div class="wf-step">
+                <span class="wf-badge">Pasul 4</span>
+                <div>
+                  <h4>4. Tipărirea Tabelului Mare pentru Avizierul de Scară</h4>
+                  <p>În FoxPro făceai: <code>Listare -> D) LISTE DE AFISAT CU RESTANTE (LAR.PRG)</code>.</p>
+                  <p>În Web: Dai click în bara de sus pe <strong>📋 Avizier / Listă Plată</strong> -> selectezi blocul -> apeși <em>🖨️ Tipărește Tabel Avizier (Print/PDF)</em>. Se deschide direct fereastra de printare formatată A4 orizontal.</p>
+                </div>
+              </div>
+              <div class="wf-step">
+                <span class="wf-badge">Pasul 5</span>
+                <div>
+                  <h4>5. Încasarea Banilor și Tăierea Chitanțelor</h4>
+                  <p>În FoxPro făceai: <code>Centralizare -> A) TAIE CHITANTE (CHI.PRG)</code>.</p>
+                  <p>În Web: Dai click în bara de sus pe <strong>🧾 Casierie & Chitanțe</strong> -> alegi apartamentul -> vezi datoria -> bagi suma -> apeși <em>Salvează & Emite Chitanță</em>. O poți printa pe loc cu semnătură și ștampilă!</p>
+                </div>
+              </div>
+              <div class="wf-step">
+                <span class="wf-badge">Pasul 6</span>
+                <div>
+                  <h4>6. Închiderea Lunii</h4>
+                  <p>În FoxPro făceai: <code>Actualizare -> L) SFARSIT DE LUNA (SLU.PRG)</code>.</p>
+                  <p>În Web: Dai click pe <strong>📅 Sfârșit de Lună</strong> -> apeși butonul verde de închidere. Sistemul mută automat indecșii noi în cei vechi și reportează datoriile pe luna viitoare.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Tabelul de Corespondență Complet Taste FoxPro -> Butoane Web -->
+        <div class="card">
+          <div class="card-header">
+            <h3>📑 Tabel Complet de Corespondență: Meniu FoxPro DOS ➡️ Aplicația Web</h3>
+          </div>
+          <div class="card-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Meniu Vechi FoxPro</th>
+                    <th>Ce făcea în DOS?</th>
+                    <th>Unde se află în Noul Site?</th>
+                    <th>Cum se folosește?</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>A) DATE GENERALE</code></td>
+                    <td>Setare lună de lucru și parametri</td>
+                    <td>Bara de sus (Top Nav)</td>
+                    <td>Afișează luna activă curentă (ex: Septembrie 2026)</td>
+                  </tr>
+                  <tr>
+                    <td><code>B) ACTUALIZARE DATE ASOCIATII</code></td>
+                    <td>Nume, CIF, bancă, cont, administrator</td>
+                    <td>Panou Principal -> Informații Asociație</td>
+                    <td>Butonul „Editează Date Asociație”</td>
+                  </tr>
+                  <tr>
+                    <td><code>C) ACTUALIZARE DATE BLOCURI</code></td>
+                    <td>Adăugare / editare blocuri</td>
+                    <td>Sidebar stânga</td>
+                    <td>Butonul „+ Adaugă Bloc”</td>
+                  </tr>
+                  <tr>
+                    <td><code>D) PERS., SUPR., PROC.</code></td>
+                    <td>Locatari, persoane, mp, procente</td>
+                    <td>Taburile „Apartamente” și „Setări Bloc”</td>
+                    <td>Editare directă din tabele</td>
+                  </tr>
+                  <tr>
+                    <td><code>E) INDEXURI CONTOARE</code></td>
+                    <td>Indecși apă rece, caldă, căldură</td>
+                    <td>Tabul „💧 Indecși & Pierderi Apă”</td>
+                    <td>Tabel editabil cu calcul automat de consum</td>
+                  </tr>
+                  <tr>
+                    <td><code>F) REPARTITOARE INCALZIRE</code></td>
+                    <td>Serii și indecși repartitoare R1-R7</td>
+                    <td>Tabul „💧 Indecși”</td>
+                    <td>Vizibile în coloanele R1–R7</td>
+                  </tr>
+                  <tr>
+                    <td><code>J) TRECERE VALORI DE PLATA</code></td>
+                    <td>Repartizare sume facturi pe apartamente</td>
+                    <td>Tabul „📑 Facturi & Repartizare”</td>
+                    <td>Butonul albastru „Repartizează”</td>
+                  </tr>
+                  <tr>
+                    <td><code>L) SFARSIT DE LUNA</code></td>
+                    <td>Închidere lună, avansare indecși</td>
+                    <td>Secțiunea „📅 Sfârșit de Lună”</td>
+                    <td>Butonul „Efectuează Sfârșit de Lună”</td>
+                  </tr>
+                  <tr>
+                    <td><code>Listare -> D) LISTE DE AFISAT</code></td>
+                    <td>Tabelul mare de avizier la scară</td>
+                    <td>Secțiunea „📋 Avizier / Listă Plată”</td>
+                    <td>Selectare bloc -> Tipărește Tabel Avizier (Print/PDF)</td>
+                  </tr>
+                  <tr>
+                    <td><code>Centralizare -> A) TAIE CHITANTE</code></td>
+                    <td>Casierie, încasări, chitanțe numerar</td>
+                    <td>Secțiunea „🧾 Casierie & Chitanțe”</td>
+                    <td>Selectare apartament -> Emitere și tipărire chitanță</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECȚIUNEA 6: TURN DE CONTROL & SUPERADMIN (CONTROL TOWER) -->
+    <!-- ======================================================== -->
+    <div class="main-section" id="sec-control-tower" style="display:none;">
+      <div id="view-control-tower">
+        <div class="page-header">
+          <div>
+            <h1>🎮 Turnul de Control al Superadminului (Control Tower & Multi-Tenant)</h1>
+            <p class="page-header-subtitle">Panou centralizat de supraveghere multi-asociație, provizionare agenții noi (Workspace Curat), impersonare și telemetrie erori</p>
+          </div>
+          <div class="page-header-actions">
+            <button class="btn btn-secondary btn-small" onclick="loadControlTowerSummary()">🔄 Reîmprospătează Starea</button>
+          </div>
+        </div>
+
+        <!-- FEATURE 24: + Adaugă Asociație / Agenție Nouă (Workspace Curat) -->
+        <div class="card" style="border-left: 4px solid #16a34a; margin-bottom: 1.5rem;">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+            <h3>🏢 + Adaugă Asociație / Agenție Nouă (Workspace Curat — Multi-Tenant)</h3>
+            <span class="badge badge-success">POST /api/operatiuni/asociatii</span>
+          </div>
+          <div class="card-body">
+            <p style="margin-bottom: 1rem; color: #475569; font-size:0.9rem;">
+              Provizionează instantaneu o asociație sau agenție nouă cu un spațiu de lucru complet curat (0 blocuri, 0 datorii, perioadă inițială deschisă), gata pentru preluarea unei asociații noi!
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Nume Asociație / Agenție Nouă *</label>
+                <input type="text" class="form-input" id="new-asoc-nume" placeholder="ex: ASOCIATIA DE PROPRIETARI PRIMAVERII">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cod Fiscal (CUI)</label>
+                <input type="text" class="form-input" id="new-asoc-cui" placeholder="ex: 12345678">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Adresă Sediu</label>
+                <input type="text" class="form-input" id="new-asoc-adresa" placeholder="ex: Str. Primăverii Nr. 10, Iași">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Administrator</label>
+                <input type="text" class="form-input" id="new-asoc-admin" placeholder="Nume Administrator">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Președinte</label>
+                <input type="text" class="form-input" id="new-asoc-pres" placeholder="Nume Președinte">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Serie Chitanțier</label>
+                <input type="text" class="form-input" id="new-asoc-serie" value="ASOC">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Lună / An Start</label>
+                <div style="display:flex; gap:0.4rem;">
+                  <input type="number" class="form-input" id="new-asoc-luna" value="9" min="1" max="12">
+                  <input type="number" class="form-input" id="new-asoc-an" value="2026" min="2000" max="2099">
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; margin-top:0.5rem;">
+              <button class="btn btn-success" id="btn-create-clean-asociatie" onclick="createNewCleanAsociatie()">
+                🚀 + Adaugă Asociație / Agenție Nouă (Workspace Curat)
+              </button>
+            </div>
+
+            <!-- Tabel Asociații / Workspace-uri existente -->
+            <div class="table-container" style="margin-top:1.25rem; margin-bottom:0;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Nume Asociație / Agenție</th>
+                    <th>CUI</th>
+                    <th>Administrator / Președinte</th>
+                    <th>Lună Activă</th>
+                    <th>Serie Chitanțe</th>
+                    <th>Acțiuni Workspace</th>
+                  </tr>
+                </thead>
+                <tbody id="tbl-ct-asociatii">
+                  <!-- Populat din JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card Impersonare Superadmin -->
+        <div class="card" style="border-left: 4px solid #9333ea; margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <h3>🎭 Motorul de Impersonare (Pretender / Masquerade)</h3>
+          </div>
+          <div class="card-body">
+            <p style="margin-bottom: 1rem; color: #475569; line-height: 1.5;">
+              Permite Superadminului să preia instantaneu sesiunea și drepturile oricărui <strong>Administrator de Asociație</strong> pentru a verifica modul de repartizare a facturilor, indecșii introduși sau chitanțele tăiate, fără a fi nevoie de parola acestuia.
+            </p>
+            <div style="background: #faf5ff; border: 1px dashed #c084fc; padding: 1rem; border-radius: 6px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+              <div>
+                <strong style="color: #6b21a8; font-size:1.05rem;">Asociația Activă: TEST ADMINISTRATORI</strong>
+                <div style="font-size:0.85rem; color:#64748b;">10 blocuri gestionate • 78 apartamente înregistrate • Rol țintă: Administrator</div>
+              </div>
+              <div>
+                <button class="btn btn-primary" onclick="startImpersonating()" style="background:#7e22ce; border-color:#6b21a8;">
+                  🎭 Preia Rolul de Administrator (Impersonate)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sumar Tehnic & Telemetrie Erori -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <h3>📡 Telemetrie Sistem & Jurnal de Erori (Error Boundary)</h3>
+          </div>
+          <div class="card-body">
+            <div class="stat-cards" style="margin-bottom: 1.25rem;">
+              <div class="stat-card">
+                <div class="stat-value" id="ct-total-blocuri">10</div>
+                <div class="stat-label">Blocuri Conectate</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="ct-total-apartamente">78</div>
+                <div class="stat-label">Apartamente Monitorizate</div>
+              </div>
+              <div class="stat-card stat-success">
+                <div class="stat-value">ONLINE</div>
+                <div class="stat-label">Stare Backend & DB</div>
+              </div>
+              <div class="stat-card stat-warning">
+                <div class="stat-value" id="ct-total-erori">0</div>
+                <div class="stat-label">Erori Nerezolvate</div>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Data / Ora</th>
+                    <th>Platformă</th>
+                    <th>Mesaj Eroare</th>
+                    <th>Stare</th>
+                    <th>Acțiuni</th>
+                  </tr>
+                </thead>
+                <tbody id="tbl-telemetrie-erori">
+                  <tr><td colspan="6" style="text-align:center; color:#64748b; padding:1.5rem;">Nicio eroare înregistrată. Sistemul funcționează optim.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- TOATE MODALELE APLICAȚIEI                                -->
+  <!-- ======================================================== -->
+
+  <!-- MODAL: Command Palette (Ctrl+K) — Căutare Rapidă 58 Operațiuni & 35 Rapoarte FoxPro -->
+  <div class="modal-overlay" id="modal-command-palette" style="display:none;" onclick="if(event.target===this) closeModal('modal-command-palette')">
+    <div class="modal modal-lg cmd-palette-modal" style="max-width: 680px; border-top: 4px solid #2563eb;">
+      <div class="modal-header" style="padding: 1rem 1.25rem; background:#f8fafc;">
+        <div style="display:flex; align-items:center; gap:0.75rem; width:100%;">
+          <span style="font-size:1.3rem;">🔍</span>
+          <input type="text" class="form-input" id="cmd-palette-input" placeholder="Tastați orice cod FoxPro (LAR, LAF, CHI, CHO, SUM, TCE, CRE, TRE, GOL, SLU, RE1, SBL, CCA...)" oninput="renderCommandPaletteResults(this.value)" onkeydown="onCommandPaletteKeyDown(event)" autocomplete="off" style="font-size:1rem; border-color:#3b82f6;">
+          <button class="modal-close" onclick="closeModal('modal-command-palette')">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="padding: 0.75rem 1rem; max-height: 440px; overflow-y: auto;">
+        <div id="cmd-palette-results" class="cmd-palette-list">
+          <!-- Populat din JS -->
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between; font-size:0.78rem; color:#64748b; padding:0.65rem 1.25rem;">
+        <span>💡 Scurtături: <strong>↑/↓</strong> navigare • <strong>Enter</strong> deschide • <strong>Esc</strong> închide</span>
+        <span>58 Operațiuni + 35 Rapoarte ORHIDEEA 2005</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Date Generale Perioadă (ADG) -->
+  <div class="modal-overlay" id="modal-date-generale" style="display:none;">
+    <div class="modal" style="max-width: 520px; border-top: 4px solid #0284c7;">
+      <div class="modal-header">
+        <h3>⚙️ Actualizare Date Generale Lună (FoxPro: ADG.PRG)</h3>
+        <button class="modal-close" onclick="closeModal('modal-date-generale')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="adg-perioada-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Ultima Zi a Lunii (ULTIMA_ZI) *</label>
+            <input type="date" class="form-input" id="adg-ultima-zi">
+            <small class="form-help">Folosită de TCE (expirare reduceri) și CHI (calcul penalități)</small>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tarif Energie Termică (TARIF_ET lei/Gcal)</label>
+            <input type="number" class="form-input" id="adg-tarif-et" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Tarif Apă Rece (TARIF_AR lei/m³) *</label>
+            <input type="number" class="form-input" id="adg-tarif-ar" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tarif Canalizare (TARIF_CA lei/m³) *</label>
+            <input type="number" class="form-input" id="adg-tarif-ca" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Procent Canal (% PROC_CA) *</label>
+            <input type="number" class="form-input" id="adg-proc-ca" step="0.1" value="100">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-date-generale')">Anulează</button>
+        <button class="btn btn-primary" onclick="saveDateGeneraleADG()">💾 Salvează Date Generale (ADG)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Facturi la Nivel de Asociație (ADA) -->
+  <div class="modal-overlay" id="modal-facturi-asociatie" style="display:none;">
+    <div class="modal modal-lg" style="max-width: 720px; border-top: 4px solid #2563eb;">
+      <div class="modal-header">
+        <h3>📑 Valori Facturi la Nivel de Asociație (FoxPro: ADA.PRG)</h3>
+        <button class="modal-close" onclick="closeModal('modal-facturi-asociatie')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.88rem; color:#475569; margin-bottom:1rem;">
+          Sumele introduse aici la nivel de asociație (`ASOC`) sunt repartizate automat pe blocuri și apartamente în Pasul 6 din `SUM.PRG`.
+        </p>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Apă Rece Asociație (APA_RECE)</label>
+            <input type="number" class="form-input" id="ada-apa-rece" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Canal Meteo Asociație (CAN_MET)</label>
+            <input type="number" class="form-input" id="ada-can-met" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Apă Caldă Volum (APA_CALDA)</label>
+            <input type="number" class="form-input" id="ada-apa-calda" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Energie Termică AC (ETAC)</label>
+            <input type="number" class="form-input" id="ada-etac" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Încălzire Asociație (INCALZIRE)</label>
+            <input type="number" class="form-input" id="ada-incalzire" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gunoi / Salubritate (GUNOI)</label>
+            <input type="number" class="form-input" id="ada-gunoi" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Chelt. Admin (CH_ADMIN)</label>
+            <input type="number" class="form-input" id="ada-ch-admin" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Chelt. Sediu (CH_SEDIU)</label>
+            <input type="number" class="form-input" id="ada-ch-sediu" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Salariu TESA / Admin (SAL_TESA)</label>
+            <input type="number" class="form-input" id="ada-sal-tesa" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Salariu Femeie Serv. (SAL_FEME)</label>
+            <input type="number" class="form-input" id="ada-sal-feme" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Abonament (ABONAMENT)</label>
+            <input type="number" class="form-input" id="ada-abonament" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fond Rulment (RULMENT)</label>
+            <input type="number" class="form-input" id="ada-rulment" step="0.01">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-facturi-asociatie')">Anulează</button>
+        <button class="btn btn-primary" onclick="saveFacturiAsociatieADA()">💾 Salvează Facturi Asociație (ADA)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Chitanță Colectivă / Descărcare Fond Reparații (CHO.FXP) -->
+  <div class="modal-overlay" id="modal-chitanta-colectiva" style="display:none;">
+    <div class="modal" style="max-width: 580px; border-top: 4px solid #f59e0b;">
+      <div class="modal-header">
+        <h3>🏢 Chitanță Colectivă / Descărcare Fond pe Bloc (FoxPro: CHO.FXP)</h3>
+        <button class="modal-close" onclick="closeModal('modal-chitanta-colectiva')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info" style="font-size:0.85rem;">
+          💡 <strong>Suport Valori Negative (CHO.FXP):</strong> Pentru descărcarea Fondului de Reparații (`A`) sau Rulment (`F`) în urma unei lucrări pe bloc, introduceți o <strong>sumă negativă</strong> (ex: <code>-32.00</code>). Pentru încasare colectivă, introduceți o sumă pozitivă.
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Selectează Blocul *</label>
+            <select class="form-select" id="cho-bloc-select">
+              <!-- Populat din JS -->
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Categorie Registru (CEE) *</label>
+            <select class="form-select" id="cho-categorie">
+              <option value="A">A — Fond de Reparații (Încasare / Descărcare Lucrare)</option>
+              <option value="F">F — Fond de Rulment</option>
+              <option value="R">R — Regie / Întreținere</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Mod Aplicare Sumă *</label>
+            <select class="form-select" id="cho-mod">
+              <option value="PER_APARTAMENT">PER_APARTAMENT — Sumă fixă pe fiecare apartament</option>
+              <option value="TOTAL_BLOC">TOTAL_BLOC — Împarte suma totală egal la apartamente</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sumă (RON — pozitivă sau negativă) *</label>
+            <input type="number" class="form-input" id="cho-suma" step="0.01" placeholder="ex: -32.00 sau 50.00">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Sursă (CASA / BANCA)</label>
+            <select class="form-select" id="cho-sursa">
+              <option value="CASA">CASA (Numerar)</option>
+              <option value="BANCA">BANCA (Ordin Plată / Virament)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data Operațiunii</label>
+            <input type="date" class="form-input" id="cho-data">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Explicație / Denumire Lucrare *</label>
+          <input type="text" class="form-input" id="cho-lucrare" value="Descarcare fond reparatii lucrare bloc" placeholder="ex: Reparație hidroizolație / Chitanță colectivă">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-chitanta-colectiva')">Anulează</button>
+        <button class="btn btn-warning" onclick="emiteChitantaColectivaCHO()">💾 Emite Operațiune Colectivă (CHO)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Editor Detaliat Apartament Extins (7 Repartitoare R1..R7, 16 Procente, 7 Contoare ADC) -->
+  <div class="modal-overlay" id="modal-apartament-extins" style="display:none;">
+    <div class="modal modal-lg" style="max-width: 880px; border-top: 4px solid #ea580c;">
+      <div class="modal-header">
+        <h3 id="modal-ap-extins-title">🔧 Configurare Extinsă Apartament (ARA / APS / ADC)</h3>
+        <button class="modal-close" onclick="closeModal('modal-apartament-extins')">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-ap-extins-body">
+        <!-- Populat dinamic din JS -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-apartament-extins')">Închide</button>
+        <button class="btn btn-primary" onclick="saveModalApartamentExtins()">💾 Salvează Toate Câmpurile Extinse</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Confirmare Ștergere Bloc cu Text Scris -->
+  <div class="modal-overlay" id="modal-delete-bloc" style="display:none;">
+    <div class="modal" style="max-width: 500px; border-top: 4px solid var(--danger-color);">
+      <div class="modal-header">
+        <h3 style="color: var(--danger-color); display:flex; align-items:center; gap:0.5rem;">
+          ⚠️ Confirmare Ștergere Bloc
+        </h3>
+        <button class="modal-close" onclick="closeModal('modal-delete-bloc')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger" style="margin-bottom: 1rem;">
+          <strong>ATENȚIE!</strong> Această acțiune este ireversibilă. Se vor șterge definitiv:
+          <ul style="margin: 0.5rem 0 0 1.25rem; padding: 0;">
+            <li>Toate apartamentele din acest bloc</li>
+            <li>Toți indecșii și istoricul de consum</li>
+            <li>Toate cheltuielile repartizate pe acest bloc</li>
+          </ul>
+        </div>
+        <p style="font-size: 0.95rem; margin-bottom: 0.75rem;">
+          Pentru a confirma ștergerea definitivă, tastați exact:
+          <br>
+          <strong id="delete-bloc-instruction-text" style="color: #b91c1c; font-size: 1.1rem; background: #fee2e2; padding: 0.25rem 0.6rem; border-radius: 4px; display:inline-block; margin-top:0.4rem; font-family:monospace;"></strong>
+        </p>
+        <div class="form-group">
+          <label class="form-label">Tastați textul de confirmare:</label>
+          <input type="text" class="form-input" id="input-confirm-delete-bloc" placeholder="Scrieți aici textul exact..." oninput="onDeleteBlocInputChange()" autocomplete="off">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-delete-bloc')">Anulează</button>
+        <button class="btn btn-danger" id="btn-confirm-delete-bloc" onclick="executaStergereBloc()" disabled style="opacity: 0.5; cursor: not-allowed;">
+          🗑️ Confirmă & Șterge Blocul
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Autentificare / Login -->
+  <div class="modal-overlay" id="modal-login" style="display:none;">
+    <div class="modal" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3>🔐 Autentificare în Sistem</h3>
+        <button class="modal-close" onclick="closeModal('modal-login')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 1.25rem;">
+          <p style="font-size:0.85rem; color:#64748b; margin-bottom:0.75rem;">Autentificare rapidă cu un singur click:</p>
+          <div style="display:flex; flex-direction:column; gap:0.5rem;">
+            <button class="btn btn-primary" onclick="quickLogin('superadmin')" style="background:#7e22ce; border-color:#6b21a8; justify-content:center;">
+              🎮 Conectare ca Superadmin (Turn de Control)
+            </button>
+            <button class="btn btn-primary" onclick="quickLogin('admin')" style="justify-content:center;">
+              🏢 Conectare ca Administrator Asociație
+            </button>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:0.5rem; margin: 1rem 0; color:#94a3b8; font-size:0.8rem;">
+          <div style="flex:1; border-top:1px solid #e2e8f0;"></div>
+          <span>sau introdu manual</span>
+          <div style="flex:1; border-top:1px solid #e2e8f0;"></div>
+        </div>
+
+        <form onsubmit="handleManualLogin(event)">
+          <div class="form-group">
+            <label class="form-label">Utilizator</label>
+            <input type="text" class="form-input" id="login-username" placeholder="superadmin sau admin">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Parolă</label>
+            <input type="password" class="form-input" id="login-password" placeholder="Parola dvs.">
+          </div>
+          <div style="margin-top: 1.25rem;">
+            <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
+              Autentificare
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Adaugă Bloc -->
+  <div class="modal-overlay" id="modal-add-bloc" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Adaugă Bloc Nou</h3>
+        <button class="modal-close" onclick="closeModal('modal-add-bloc')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Număr/Cod Bloc *</label>
+          <input type="text" class="form-input" id="new-bloc-nr" placeholder="ex: 17, 19, A1 etc.">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Strada</label>
+            <input type="text" class="form-input" id="new-bloc-strada">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Număr</label>
+            <input type="text" class="form-input" id="new-bloc-numar">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Nr. Apartamente</label>
+            <input type="number" class="form-input" id="new-bloc-apart" min="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Suprafață Totală (mp)</label>
+            <input type="number" class="form-input" id="new-bloc-sup" step="0.01" min="0">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-add-bloc')">Anulează</button>
+        <button class="btn btn-primary" onclick="addBloc()">Adaugă Bloc</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Adaugă Apartament -->
+  <div class="modal-overlay" id="modal-add-apart" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Adaugă Apartament</h3>
+        <button class="modal-close" onclick="closeModal('modal-add-apart')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Nr. Apartament *</label>
+            <input type="text" class="form-input" id="new-apart-nr">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nume Proprietar</label>
+            <input type="text" class="form-input" id="new-apart-nume">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Nr. Persoane</label>
+            <input type="number" class="form-input" id="new-apart-pers" min="0" value="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Suprafață (mp)</label>
+            <input type="number" class="form-input" id="new-apart-sup" step="0.01" min="0">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-add-apart')">Anulează</button>
+        <button class="btn btn-primary" onclick="addApartament()">Adaugă Apartament</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Adaugă Factură -->
+  <div class="modal-overlay" id="modal-add-factura" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Adaugă Factură</h3>
+        <button class="modal-close" onclick="closeModal('modal-add-factura')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Tip Factură *</label>
+            <select class="form-select" id="new-fact-tip">
+              <option value="">-- Selectați --</option>
+              <option value="APA_RECE">Apă Rece</option>
+              <option value="APA_CALDA">Apă Caldă</option>
+              <option value="APA_POTABILA">Apă Potabilă (toată asociația)</option>
+              <option value="APA_METEO">Apă Meteo / Canalizare</option>
+              <option value="CURENT_SCARA">Curent Scară</option>
+              <option value="CURENT_LIFT">Curent Lift</option>
+              <option value="LIFT">Lift (întreținere/reparații)</option>
+              <option value="INCALZIRE">Încălzire</option>
+              <option value="GAZ">Gaz</option>
+              <option value="GUNOI">Gunoi</option>
+              <option value="SALAR_ADMIN">Salariu Administrator</option>
+              <option value="SALAR_FEMEIE">Salariu Femeie Serviciu</option>
+              <option value="CH_ADMIN">Cheltuieli Administrative</option>
+              <option value="CH_SEDIU">Cheltuieli Sediu</option>
+              <option value="FOND_REPARATII">Fond Reparații</option>
+              <option value="FOND_RULMENT">Fond Rulment</option>
+              <option value="REPARATII">Reparații Curente</option>
+              <option value="ALTELE">Altele</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Suma (RON) *</label>
+            <input type="number" class="form-input" id="new-fact-suma" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Mod Repartizare *</label>
+            <select class="form-select" id="new-fact-repartizare">
+              <option value="PERSOANE">Pe Persoane</option>
+              <option value="COTA_INDIVIZA">Pe Cotă Parte Indiviză (suprafață)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nivel</label>
+            <select class="form-select" id="new-fact-nivel">
+              <option value="bloc">Acest Bloc</option>
+              <option value="asociatie">Toată Asociația</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Luna</label>
+            <select class="form-select" id="new-fact-luna">
+              <option value="1">Ianuarie</option>
+              <option value="2">Februarie</option>
+              <option value="3">Martie</option>
+              <option value="4">Aprilie</option>
+              <option value="5">Mai</option>
+              <option value="6">Iunie</option>
+              <option value="7">Iulie</option>
+              <option value="8">August</option>
+              <option value="9">Septembrie</option>
+              <option value="10">Octombrie</option>
+              <option value="11">Noiembrie</option>
+              <option value="12">Decembrie</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">An</label>
+            <input type="number" class="form-input" id="new-fact-an" value="2026" min="2000" max="2099">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Nr. Factură</label>
+            <input type="text" class="form-input" id="new-fact-nr">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data Factură</label>
+            <input type="date" class="form-input" id="new-fact-data">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Furnizor</label>
+          <input type="text" class="form-input" id="new-fact-furnizor">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Denumire / Detalii</label>
+          <input type="text" class="form-input" id="new-fact-denumire">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-add-factura')">Anulează</button>
+        <button class="btn btn-primary" onclick="addFactura()">Adaugă Factură</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Editare Apartament -->
+  <div class="modal-overlay" id="modal-edit-apart" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Editare Apartament</h3>
+        <button class="modal-close" onclick="closeModal('modal-edit-apart')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-apart-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Nr. Apartament</label>
+            <input type="text" class="form-input" id="edit-apart-nr">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nume Proprietar</label>
+            <input type="text" class="form-input" id="edit-apart-nume">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Nr. Persoane</label>
+            <input type="number" class="form-input" id="edit-apart-pers" min="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Suprafață (mp)</label>
+            <input type="number" class="form-input" id="edit-apart-sup" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Restanțe Anterioare (RON)</label>
+            <input type="number" class="form-input" id="edit-apart-restante" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Penalități (RON)</label>
+            <input type="number" class="form-input" id="edit-apart-penalizari" step="0.01">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-edit-apart')">Anulează</button>
+        <button class="btn btn-primary" onclick="saveEditApartament()">Salvează</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Editare Asociație -->
+  <div class="modal-overlay" id="modal-edit-asociatie" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Editează Date Asociație</h3>
+        <button class="modal-close" onclick="closeModal('modal-edit-asociatie')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Nume Asociație</label>
+          <input type="text" class="form-input" id="edit-asoc-nume">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Cod Fiscal (CUI)</label>
+            <input type="text" class="form-input" id="edit-asoc-cui">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Adresă Sediu</label>
+            <input type="text" class="form-input" id="edit-asoc-adresa">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Administrator</label>
+            <input type="text" class="form-input" id="edit-asoc-admin">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Președinte</label>
+            <input type="text" class="form-input" id="edit-asoc-pres">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Cont Bancar (IBAN)</label>
+            <input type="text" class="form-input" id="edit-asoc-iban">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Banca</label>
+            <input type="text" class="form-input" id="edit-asoc-banca">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Procent Penalizare (%/zi)</label>
+            <input type="number" class="form-input" id="edit-asoc-proc-penal" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Zile Gratie / Scadență</label>
+            <input type="number" class="form-input" id="edit-asoc-zile-penal">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Serie Chitanțier</label>
+            <input type="text" class="form-input" id="edit-asoc-serie-ch">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Următorul Număr Chitanță</label>
+            <input type="number" class="form-input" id="edit-asoc-nr-ch">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-edit-asociatie')">Anulează</button>
+        <button class="btn btn-primary" onclick="saveEditAsociatie()">Salvează Date Asociație</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Tipărire Chitanță -->
+  <div class="modal-overlay" id="modal-print-chitanta" style="display:none;">
+    <div class="modal" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>Chitanță de Încasare</h3>
+        <button class="modal-close" onclick="closeModal('modal-print-chitanta')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="chitanta-print-box" id="chitanta-print-content">
+          <!-- Populat dinamic cu format chitanță oficial -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-print-chitanta')">Închide</button>
+        <button class="btn btn-primary" onclick="printChitantaCurenta()">🖨️ Tipărește Chitanța</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="browser-runtime.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
