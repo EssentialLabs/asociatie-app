@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestiune Asociație de Proprietari - TEST ADMINISTRATORI</title>
+  <title>Aplicație Asociație de Proprietari — Sistem Administrare</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -21,7 +21,7 @@
     <div class="top-nav-brand">
       <span class="brand-icon">🏢</span>
       <div class="brand-info">
-        <span class="brand-title" id="top-nav-brand-title">ORHIDEEA / TEST Administratori</span>
+        <span class="brand-title" id="top-nav-brand-title">Asociația TEST / Administratori</span>
         <span class="brand-subtitle" id="top-nav-subtitle">Asociație de Proprietari • Luna activă: Septembrie 2026</span>
       </div>
     </div>
@@ -31,7 +31,7 @@
       <div class="switcher-group" title="Comută Asociația / Agenția (Multi-Tenant Workspace)">
         <label for="global-asociatie-select">🏢 Asociație:</label>
         <select id="global-asociatie-select" class="top-nav-select" onchange="switchAsociatieWorkspace(this.value)">
-          <option value="1">ORHIDEEA (ID #1)</option>
+          <option value="1">Asociația TEST (ID #1)</option>
         </select>
       </div>
       <div class="switcher-group" title="Selectează Perioada Lunară de Lucru">
@@ -145,7 +145,7 @@
           <div class="page-header">
             <div>
               <h1>Panou Principal & Operațiuni Asociație</h1>
-              <p class="page-header-subtitle" id="dashboard-asoc-subtitle">Asociația de Proprietari ORHIDEEA / TEST ADMINISTRATORI</p>
+              <p class="page-header-subtitle" id="dashboard-asoc-subtitle">Asociația de Proprietari TEST</p>
             </div>
             <div class="page-header-actions">
               <button class="btn btn-secondary btn-small" onclick="showDateGeneraleModal()">⚙️ Date Generale Lună (ADG)</button>
@@ -864,7 +864,7 @@
             <p class="page-header-subtitle">Echivalent FoxPro: [Centralizare -> A) TAIE CHITANTE INDIVIDUALE (CHI.PRG) & B) CHITANTE COLECTIVE / DESCARCARE FOND (CHO.FXP)]</p>
           </div>
           <div class="page-header-actions">
-            <button class="btn btn-warning" id="btn-open-cho" onclick="showModal('modal-chitanta-colectiva')">🏢 Chitanță Colectivă / Descărcare Fond (CHO)</button>
+            <button class="btn btn-primary" id="btn-open-ade" onclick="openAdeverintaFromCasierie()">?? Adeverin?a Vnzare (ADE)</button>`n            <button class="btn btn-warning" id="btn-open-cho" onclick="showModal('modal-chitanta-colectiva')">🏢 Chitanță Colectivă / Descărcare Fond (CHO)</button>
             <button class="btn btn-secondary" onclick="loadChitante()">🔄 Reîmprospătează Jurnal</button>
           </div>
         </div>
@@ -1054,7 +1054,7 @@
         <div class="page-header">
           <div>
             <h1>📊 Catalog Complet 35 Rapoarte FoxPro (Listare A–P, Situații A–Q, Centralizare IN1/IN2)</h1>
-            <p class="page-header-subtitle">Toate cele 35 de rapoarte oficiale ORHIDEEA 2005 cu filtrare pe bloc/apartament, protecție GDPR avizier, tipărire A4/Landscape și export CSV</p>
+            <p class="page-header-subtitle">Toate cele 35 de rapoarte oficiale FoxPro cu filtrare pe bloc/apartament, protecție GDPR avizier, tipărire A4/Landscape și export CSV</p>
           </div>
           <div class="page-header-actions">
             <button class="btn btn-primary" id="btn-print-raport" onclick="printCurrentReport()">🖨️ Tipărește A4/Landscape</button>
@@ -1108,7 +1108,7 @@
               </div>
             </div>
 
-            <!-- Card Raport Printabil -->
+            <div id="rapoarte-custom-options" style="display:none; margin-top:0.75rem; padding:0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;"></div>`n`n            <!-- Card Raport Printabil -->
             <div class="card printable-card" id="printable-raport">
               <div class="card-body">
                 <div class="avizier-header-box" id="raport-header-box">
@@ -1927,7 +1927,7 @@
       </div>
       <div class="modal-footer" style="justify-content:space-between; font-size:0.78rem; color:#64748b; padding:0.65rem 1.25rem;">
         <span>💡 Scurtături: <strong>↑/↓</strong> navigare • <strong>Enter</strong> deschide • <strong>Esc</strong> închide</span>
-        <span>58 Operațiuni + 35 Rapoarte ORHIDEEA 2005</span>
+        <span>58 Operațiuni + 35 Rapoarte FoxPro</span>
       </div>
     </div>
   </div>
@@ -2522,6 +2522,44 @@
       <div class="modal-footer">
         <button class="btn" onclick="closeModal('modal-print-chitanta')">Închide</button>
         <button class="btn btn-primary" onclick="printChitantaCurenta()">🖨️ Tipărește Chitanța</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- MODAL: Adeverinta Vanzare / Notar (ADE.PRG) -->
+  <div class="modal-overlay" id="modal-adeverinta" style="display:none;">
+    <div class="modal modal-lg" style="max-width: 820px; border-top: 4px solid #2563eb;">
+      <div class="modal-header">
+        <h3 id="modal-adeverinta-title">?? Adeverin?a Plata la Zi / Notar Vnzare (ADE.PRG)</h3>
+        <button class="modal-close" onclick="closeModal('modal-adeverinta')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row" style="background:#f1f5f9; padding:0.75rem; border-radius:6px; margin-bottom:1rem; align-items:flex-end;">
+          <div class="form-group" style="min-width:140px;">
+            <label class="form-label">Nr. Inregistrare</label>
+            <input type="number" class="form-input" id="ade-nr-inr" value="1">
+          </div>
+          <div class="form-group" style="min-width:140px;">
+            <label class="form-label">Data Inregistrarii</label>
+            <input type="date" class="form-input" id="ade-data-inr">
+          </div>
+          <div class="form-group" style="flex:2; min-width:260px;">
+            <label class="form-label">La ce serve?te? (Scop / Destina?ie)</label>
+            <input type="text" class="form-input" id="ade-serv" value="NOTAR PUBLIC, VANZARE APARTAMENT">
+          </div>
+          <div class="form-group">
+            <button class="btn btn-secondary" onclick="regenerareAdeverintaCuParametri()">?? Actualizeaza</button>
+          </div>
+        </div>
+
+        <div id="adeverinta-preview-content" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+          <!-- Generat dinamic din JS -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modal-adeverinta')">Inchide</button>
+        <button class="btn btn-primary" onclick="printAdeverinta()">?? Tipare?te Adeverin?a (A4)</button>
       </div>
     </div>
   </div>
