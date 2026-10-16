@@ -126,6 +126,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loadBlocuri();
   loadDashboard();
 
+  // Initializare Routing URL Hash (#blocuri, #avizier, #rapoarte/LAF, etc.)
+  window.addEventListener('hashchange', () => navigateFromHash());
+  window.addEventListener('popstate', () => navigateFromHash());
+  navigateFromHash();
+
   // Auto-calculate consum pe contoare generale
   ['ar', 'ac', 'in'].forEach(type => {
     const vechi = document.getElementById(`idx-${type}-vechi`);
@@ -362,11 +367,60 @@ async function goToWorkflowStage(stage) {
 }
 
 // ============================================================
-//  NAVIGARE PRINCIPALĂ (TOP NAVIGATION)
+//  NAVIGARE PRINCIPALĂ (TOP NAVIGATION) & ROUTING URL (#blocuri, #avizier, #rapoarte/LAF, etc.)
 // ============================================================
-function switchMainSection(section) {
+function navigateFromHash() {
+  let raw = (window.location.hash || '').replace(/^#\/?/, '').trim();
+  if (!raw) {
+    const cleanPath = window.location.pathname.replace(/^\/asociatie-app\/?/, '').replace(/^\/?/, '').trim();
+    if (cleanPath && cleanPath !== 'index.html' && cleanPath !== '200.html') {
+      raw = cleanPath;
+    }
+  }
+  if (!raw) {
+    switchMainSection('blocuri', false);
+    return;
+  }
+
+  const [pathPart, queryPart] = raw.split('?');
+  const parts = pathPart.split('/');
+  let section = parts[0];
+  const subParam = parts[1];
+
+  if (section === 'chitante') section = 'casierie';
+
+  const validSections = ['blocuri', 'avizier', 'rapoarte', 'casierie', 'registre', 'luna', 'ghid', 'control-tower'];
+  if (!validSections.includes(section)) {
+    section = 'blocuri';
+  }
+
+  switchMainSection(section, false);
+
+  if (section === 'rapoarte' && subParam) {
+    selectReport(subParam.toUpperCase(), false);
+  } else if (queryPart) {
+    const q = new URLSearchParams(queryPart);
+    const cod = q.get('cod') || q.get('code');
+    if (section === 'rapoarte' && cod) {
+      selectReport(cod.toUpperCase(), false);
+    }
+  }
+}
+
+function switchMainSection(section, updateHistory = true) {
   if (section === 'chitante') section = 'casierie';
   activeSection = section;
+
+  // Actualizare URL în bara de adrese a browserului pentru suport "Back / Forward" și link-uri unice per pagină
+  if (updateHistory) {
+    let targetHash = '#' + section;
+    if (section === 'rapoarte' && currentReportCode) {
+      targetHash = '#' + section + '/' + currentReportCode;
+    }
+    if (window.location.hash !== targetHash) {
+      history.pushState({ section, currentReportCode }, '', targetHash);
+    }
+  }
 
   // Actualizare butoane meniu
   document.querySelectorAll('.top-nav-btn').forEach(btn => btn.classList.remove('active'));
@@ -1962,8 +2016,15 @@ async function onRapoarteBlocChange() {
   reloadCurrentReport();
 }
 
-async function selectReport(code) {
+async function selectReport(code, updateHistory = true) {
   currentReportCode = String(code || 'LAF').toUpperCase();
+
+  if (updateHistory && activeSection === 'rapoarte') {
+    const targetHash = `#rapoarte/${currentReportCode}`;
+    if (window.location.hash !== targetHash) {
+      history.pushState({ section: 'rapoarte', report: currentReportCode }, '', targetHash);
+    }
+  }
 
   document.querySelectorAll('.report-catalog-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-report-code') === currentReportCode);
@@ -2096,7 +2157,7 @@ function printCurrentReport() {
   window.print();
 }
 
-function exportCurrentReportCSV() {
+async function exportCurrentReportCSV() {
   const blocVal = document.getElementById('rapoarte-bloc-select')?.value || '';
   const apVal = document.getElementById('rapoarte-apart-select')?.value || '';
   const showNames = document.getElementById('rapoarte-gdpr-toggle')?.checked ? 'true' : 'false';
@@ -2110,7 +2171,38 @@ function exportCurrentReportCSV() {
     params.set('luna', activePer.luna);
   }
 
-  window.open(`${API}/api/rapoarte/${currentReportCode}?${params.toString()}`, '_blank');
+  try {
+    const res = await fetch(`/api/rapoarte/${currentReportCode}?${params.toString()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `raport_${currentReportCode}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2000);
+    showAlert(`Raportul ${currentReportCode} a fost descărcat în format CSV.`, 'success');
+  } catch (err) {
+    // Fallback de siguranță: generare directă din datele raportului curent încărcat în memorie
+    if (currentReportData && currentReportData.columns && currentReportData.rows) {
+      const cols = currentReportData.columns;
+      const header = cols.map(c => `"${(c.label || c.key || '').replace(/"/g, '""')}"`).join(',');
+      const rows = currentReportData.rows.map(r => cols.map(c => `"${String(r[c.key] ?? '').replace(/"/g, '""')}"`).join(','));
+      const csvContent = '\uFEFF' + [header, ...rows].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `raport_${currentReportCode}_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2000);
+      showAlert(`Raportul ${currentReportCode} a fost exportat din datele curente.`, 'success');
+    } else {
+      showAlert('Eroare la descărcarea fișierului CSV: ' + err.message, 'warning');
+    }
+  }
 }
 
 // ============================================================
