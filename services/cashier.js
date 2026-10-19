@@ -390,8 +390,10 @@ function issueReceipt(arg1, arg2) {
 /**
  * Issues a collective receipt or repair fund deduction across a block (CHO.FXP parity).
  * Supports:
- * - mode: 'TOTAL_BLOC' (divides total_suma equally across apartments in the block)
- *   or 'PER_APARTAMENT' (applies suma_per_apartament to each apartment).
+ * - mod_valoare / mod / mode: 'PER_APARTAMENT' (default, uses valoare / suma_per_apartament for each apartment)
+ *   or 'TOTAL_BLOC' (divides valoare_totala / suma_totala / valoare equally across selected/block apartments: round2(total / N)).
+ * - mod_numar: 'INCREMENTAL' (default, each apartment gets a distinct incrementing receipt number ult_ch, ult_ch+1, ...)
+ *   or 'UNIC' (all apartments in the batch share the same receipt/document number numar_document or ult_ch, advancing urmatorul_numar_chitanta only by 1 if using receipt series).
  * - Negative amounts (e.g. -32.00 RON) for discharging repair fund / working fund for a block work item.
  */
 function issueCollectiveReceipt(arg1, arg2) {
@@ -427,8 +429,19 @@ function issueCollectiveReceipt(arg1, arg2) {
     throw new Error('Nu există apartamente selectate în acest bloc.');
   }
 
-  const mode = String(payload.mod || payload.mode || 'PER_APARTAMENT').toUpperCase();
-  const categorie = String(payload.categorie || payload.cee || 'A').toUpperCase();
+  const rawModValoare = String(
+    payload.mod_valoare || payload.mod || payload.mode || payload.mod_distribuire || 'PER_APARTAMENT'
+  ).trim().toUpperCase();
+  const modValoare = rawModValoare === 'TOTAL_BLOC' || rawModValoare === 'TOTAL' ? 'TOTAL_BLOC' : 'PER_APARTAMENT';
+
+  const rawModNumar = String(payload.mod_numar || payload.modNumar || 'INCREMENTAL').trim().toUpperCase();
+  const modNumar = rawModNumar === 'UNIC' ? 'UNIC' : 'INCREMENTAL';
+
+  const categorie = String(payload.categorie || payload.cee || 'A').trim().toUpperCase();
+  if (!['R', 'F', 'A', 'P'].includes(categorie)) {
+    throw new Error('Categorie invalidă pentru chitanța colectivă (trebuie să fie R, F, A sau P).');
+  }
+
   const dataEmiterii = String(payload.data_emiterii || payload.data || new Date().toISOString().slice(0, 10)).slice(0, 10);
   const sursa = String(payload.sursa || 'CASA').toUpperCase() === 'BANCA' ? 'BANCA' : 'CASA';
   const lucrare = String(payload.lucrare || payload.explicatie || 'Chitanta colectiva / Descarcare fond').trim();
@@ -444,14 +457,18 @@ function issueCollectiveReceipt(arg1, arg2) {
   const activePer = d.prepare('SELECT id FROM perioade WHERE an = ? AND luna = ?').get(an, luna);
 
   let perAptAmount;
-  if (mode === 'TOTAL_BLOC') {
-    const totalBloc = Number(payload.suma_totala ?? payload.suma ?? 0);
+  if (modValoare === 'TOTAL_BLOC') {
+    const totalBloc = Number(
+      payload.valoare_totala ?? payload.suma_totala ?? payload.valoare ?? payload.suma ?? 0
+    );
     perAptAmount = round2(totalBloc / apts.length);
   } else {
-    perAptAmount = round2(payload.suma_per_apartament ?? payload.suma ?? 0);
+    perAptAmount = round2(
+      payload.valoare ?? payload.suma_per_apartament ?? payload.suma ?? payload.valoare_totala ?? 0
+    );
   }
 
-  if (perAptAmount === 0) {
+  if (!Number.isFinite(perAptAmount) || perAptAmount === 0) {
     throw new Error('Suma pe apartament în chitanța colectivă nu poate fi 0.');
   }
 
@@ -460,31 +477,32 @@ function issueCollectiveReceipt(arg1, arg2) {
 
   const tx = d.transaction(() => {
     const currentAsoc = d.prepare('SELECT urmatorul_numar_chitanta FROM asociatie WHERE id = ?').get(asoc.id);
-    const numar = Number(payload.numar || currentAsoc?.urmatorul_numar_chitanta || 1);
+    const ultCh = Number(currentAsoc?.urmatorul_numar_chitanta || 1);
+
+    const rawDocNum =
+      payload.numar_document ?? payload.numar_chitanta ?? payload.numar ?? payload.document;
+    const hasExplicitDocNum =
+      rawDocNum !== undefined && rawDocNum !== null && String(rawDocNum).trim() !== '';
+
+    let startNumar = ultCh;
+    if (hasExplicitDocNum) {
+      const numericMatch = String(rawDocNum).match(/\d+/);
+      const parsed = numericMatch ? parseInt(numericMatch[0], 10) : NaN;
+      if (Number.isFinite(parsed) && parsed > 0) {
+        startNumar = parsed;
+      }
+    }
+
     const totalReceiptSum = round2(perAptAmount * apts.length);
+    const tipPlata = sursa === 'BANCA' ? 'BANCA' : 'NUMERAR';
 
     const insChit = d.prepare(`
       INSERT INTO chitante (
         serie, numar, data_emiterii, apartament_id, bloc_id, perioada_id,
         tip_chitanta, nume_platitor, numar_apart, cod_bloc,
         suma, suma_litere, explicatie, tip_plata, anulata
-      ) VALUES (?, ?, ?, NULL, ?, ?, 'COLECTIV', ?, 'COLECTIV', ?, ?, ?, ?, ?, 0)
+      ) VALUES (?, ?, ?, ?, ?, ?, 'COLECTIV', ?, ?, ?, ?, ?, ?, ?, 0)
     `);
-
-    const chitInfo = insChit.run(
-      serie,
-      numar,
-      dataEmiterii,
-      blocRow.id,
-      activePer?.id || null,
-      `BLOC ${blocRow.bloc} (${apts.length} ap.)`,
-      blocRow.bloc,
-      totalReceiptSum,
-      numarInLitere(Math.abs(totalReceiptSum)),
-      lucrare,
-      sursa === 'BANCA' ? 'BANCA' : 'NUMERAR'
-    );
-    const chitantaId = Number(chitInfo.lastInsertRowid);
 
     const insDatorie = d.prepare(`
       INSERT INTO datorii (
@@ -498,14 +516,75 @@ function issueCollectiveReceipt(arg1, arg2) {
     `);
 
     const affected = [];
+    const createdChitante = [];
+    let sharedChitantaId = null;
 
-    for (const apt of apts) {
+    if (modNumar === 'UNIC') {
+      const chitInfo = insChit.run(
+        serie,
+        startNumar,
+        dataEmiterii,
+        null,
+        blocRow.id,
+        activePer?.id || null,
+        `BLOC ${blocRow.bloc} (${apts.length} ap.)`,
+        'COLECTIV',
+        blocRow.bloc,
+        totalReceiptSum,
+        numarInLitere(Math.abs(totalReceiptSum)),
+        lucrare,
+        tipPlata
+      );
+      sharedChitantaId = Number(chitInfo.lastInsertRowid);
+      createdChitante.push({
+        id: sharedChitantaId,
+        serie,
+        numar: startNumar,
+        apartament_id: null,
+        numar_apart: 'COLECTIV',
+        suma: totalReceiptSum,
+        data_emiterii: dataEmiterii
+      });
+    }
+
+    for (let idx = 0; idx < apts.length; idx++) {
+      const apt = apts[idx];
+      const aptNumarChitanta = modNumar === 'INCREMENTAL' ? startNumar + idx : startNumar;
+
+      let aptChitantaId = sharedChitantaId;
+      if (modNumar === 'INCREMENTAL') {
+        const chitInfo = insChit.run(
+          serie,
+          aptNumarChitanta,
+          dataEmiterii,
+          apt.id,
+          blocRow.id,
+          activePer?.id || null,
+          apt.nume_proprietar || `Ap. ${apt.numar_apart}`,
+          String(apt.numar_apart),
+          blocRow.bloc,
+          perAptAmount,
+          numarInLitere(Math.abs(perAptAmount)),
+          lucrare,
+          tipPlata
+        );
+        aptChitantaId = Number(chitInfo.lastInsertRowid);
+        createdChitante.push({
+          id: aptChitantaId,
+          serie,
+          numar: aptNumarChitanta,
+          apartament_id: apt.id,
+          numar_apart: apt.numar_apart,
+          suma: perAptAmount,
+          data_emiterii: dataEmiterii
+        });
+      }
+
       // In CHO.FXP, if discharging repair fund (negative value) or collective cashing where row doesn't exist,
       // book a matching row with VALOARE = perAptAmount and PLATA1 = perAptAmount (net unpaid change = 0, or discharge).
       let targetDatorieId = null;
 
       if (perAptAmount > 0 && !payload.create_rows) {
-        // Check if there is an unpaid row in this category
         const existingRow = d
           .prepare(`
             SELECT d.id, ROUND(d.valoare - COALESCE(SUM(CASE WHEN c.anulata = 1 THEN 0 ELSE p.suma END), 0), 2) AS rest
@@ -540,35 +619,64 @@ function issueCollectiveReceipt(arg1, arg2) {
         targetDatorieId = Number(dInfo.lastInsertRowid);
       }
 
-      insPlata.run(targetDatorieId, chitantaId, perAptAmount, dataEmiterii, sursa);
+      insPlata.run(targetDatorieId, aptChitantaId, perAptAmount, dataEmiterii, sursa);
       syncApartmentScalars(d, apt.id);
 
       affected.push({
         apartament_id: apt.id,
         numar_apart: apt.numar_apart,
         datorie_id: targetDatorieId,
-        suma: perAptAmount
+        chitanta_id: aptChitantaId,
+        numar_chitanta: aptNumarChitanta,
+        numar: aptNumarChitanta,
+        suma: perAptAmount,
+        valoare: perAptAmount
       });
     }
 
-    if (numar >= (currentAsoc?.urmatorul_numar_chitanta || 1)) {
-      d.prepare('UPDATE asociatie SET urmatorul_numar_chitanta = ? WHERE id = ?').run(numar + 1, asoc.id);
+    let nextUltCh = ultCh;
+    if (modNumar === 'INCREMENTAL') {
+      const lastNumar = startNumar + apts.length - 1;
+      if (lastNumar >= ultCh) {
+        nextUltCh = lastNumar + 1;
+        d.prepare('UPDATE asociatie SET urmatorul_numar_chitanta = ? WHERE id = ?').run(nextUltCh, asoc.id);
+      }
+    } else {
+      // mod_numar === 'UNIC': advance urmatorul_numar_chitanta only by 1 if using receipt series
+      const usesReceiptSeries = !hasExplicitDocNum || startNumar === ultCh || payload.use_receipt_series === true;
+      if (usesReceiptSeries && startNumar >= ultCh) {
+        nextUltCh = startNumar + 1;
+        d.prepare('UPDATE asociatie SET urmatorul_numar_chitanta = ? WHERE id = ?').run(nextUltCh, asoc.id);
+      }
     }
 
     if (sursa === 'CASA' && totalReceiptSum > 0) {
       syncDailyCashSummary(d, dataEmiterii, asoc.id, activePer?.id || null);
     }
 
+    const firstChitantaId = createdChitante[0]?.id || null;
+    const numereChitante = createdChitante.map(c => c.numar);
+
     result = {
-      id: chitantaId,
+      id: firstChitantaId,
+      chitanta_ids: createdChitante.map(c => c.id),
+      chitante: createdChitante,
+      numere_chitante: numereChitante,
       tip_chitanta: 'COLECTIV',
+      mod_valoare: modValoare,
+      mod_numar: modNumar,
       serie,
-      numar,
+      numar: startNumar,
+      numar_document: hasExplicitDocNum ? String(rawDocNum).trim() : String(startNumar),
+      ultimul_numar: numereChitante[numereChitante.length - 1] || startNumar,
+      urmatorul_numar_chitanta: nextUltCh,
       data_emiterii: dataEmiterii,
       bloc_id: blocRow.id,
       bloc: blocRow.bloc,
       categorie,
+      valoare_per_apartament: perAptAmount,
       suma_per_apartament: perAptAmount,
+      valoare_totala: totalReceiptSum,
       suma_totala: totalReceiptSum,
       apartamente_afectate: affected.length,
       explicatie: lucrare,
@@ -578,6 +686,387 @@ function issueCollectiveReceipt(arg1, arg2) {
 
   tx();
   return result;
+}
+
+/**
+ * Inline edit of an existing debt row in `datorii` (CHI.PRG direct browse edits).
+ */
+function updateDebtRow(arg1, arg2, arg3) {
+  let d;
+  let datorieId;
+  let payload;
+  if (arg1 && typeof arg1.prepare === 'function') {
+    d = arg1;
+    datorieId = Number(arg2);
+    payload = arg3 || {};
+  } else {
+    d = getDb();
+    datorieId = Number(arg1);
+    payload = arg2 || {};
+  }
+
+  const existing = d.prepare('SELECT * FROM datorii WHERE id = ?').get(datorieId);
+  if (!existing) {
+    const err = new Error(`Rândul de datorie #${datorieId} nu a fost găsit.`);
+    err.status = 404;
+    throw err;
+  }
+
+  const categorie =
+    payload.categorie !== undefined
+      ? String(payload.categorie).trim().toUpperCase()
+      : String(existing.categorie).trim().toUpperCase();
+
+  if (!['R', 'F', 'A', 'P'].includes(categorie)) {
+    const err = new Error('Categorie invalidă (trebuie să fie R, F, A sau P).');
+    err.status = 400;
+    throw err;
+  }
+
+  const rawValoare =
+    payload.valoare !== undefined
+      ? payload.valoare
+      : payload.suma !== undefined
+      ? payload.suma
+      : existing.valoare;
+  const valoare = Number(rawValoare);
+  if (rawValoare === null || rawValoare === '' || typeof rawValoare === 'boolean' || !Number.isFinite(valoare)) {
+    const err = new Error('Valoarea datoriei trebuie să fie un număr finit valid.');
+    err.status = 400;
+    throw err;
+  }
+
+  const an = payload.an !== undefined ? Number(payload.an) : Number(existing.an);
+  const luna = payload.luna !== undefined ? Number(payload.luna) : Number(existing.luna);
+  if (!Number.isFinite(an) || !Number.isFinite(luna) || luna < 1 || luna > 12) {
+    const err = new Error('Anul sau luna specificată este invalidă.');
+    err.status = 400;
+    throw err;
+  }
+
+  const lunaText =
+    payload.luna_text !== undefined
+      ? String(payload.luna_text).trim()
+      : payload.luna !== undefined
+      ? LUNI_RO[luna] || String(luna)
+      : existing.luna_text || LUNI_RO[luna] || String(luna);
+
+  const explicatie =
+    payload.explicatie !== undefined ? String(payload.explicatie).trim() : String(existing.explicatie || '');
+
+  d.prepare(`
+    UPDATE datorii
+    SET valoare = ?, categorie = ?, an = ?, luna = ?, luna_text = ?, explicatie = ?
+    WHERE id = ?
+  `).run(round2(valoare), categorie, an, luna, lunaText, explicatie, datorieId);
+
+  syncApartmentScalars(d, existing.apartament_id);
+
+  const updated = d
+    .prepare(`
+      SELECT
+        d.*,
+        ROUND(COALESCE(SUM(CASE WHEN c.anulata = 1 THEN 0 ELSE p.suma END), 0), 2) AS achitat,
+        ROUND(d.valoare - COALESCE(SUM(CASE WHEN c.anulata = 1 THEN 0 ELSE p.suma END), 0), 2) AS restanta
+      FROM datorii d
+      LEFT JOIN plati p ON p.datorie_id = d.id
+      LEFT JOIN chitante c ON c.id = p.chitanta_id
+      WHERE d.id = ?
+      GROUP BY d.id
+    `)
+    .get(datorieId);
+
+  return {
+    success: true,
+    datorie: updated
+  };
+}
+
+/**
+ * Deletes a row in `datorii` (CHI.PRG F5 = Sterg) along with its associated `plati`.
+ */
+function deleteDebtRow(arg1, arg2, arg3) {
+  let d;
+  let datorieId;
+  let opts;
+  if (arg1 && typeof arg1.prepare === 'function') {
+    d = arg1;
+    datorieId = Number(arg2);
+    opts = arg3 || {};
+  } else {
+    d = getDb();
+    datorieId = Number(arg1);
+    opts = arg2 || {};
+  }
+
+  const existing = d.prepare('SELECT * FROM datorii WHERE id = ?').get(datorieId);
+  if (!existing) {
+    const err = new Error(`Rândul de datorie #${datorieId} nu a fost găsit.`);
+    err.status = 404;
+    throw err;
+  }
+
+  const platiRows = d.prepare('SELECT * FROM plati WHERE datorie_id = ?').all(datorieId);
+
+  const tx = d.transaction(() => {
+    d.prepare('DELETE FROM plati WHERE datorie_id = ?').run(datorieId);
+    d.prepare('DELETE FROM datorii WHERE id = ?').run(datorieId);
+    syncApartmentScalars(d, existing.apartament_id);
+
+    const casaDates = new Set(platiRows.filter(p => p.sursa === 'CASA' && p.data).map(p => p.data));
+    for (const dt of casaDates) {
+      syncDailyCashSummary(d, dt, 1, existing.perioada_id || null);
+    }
+  });
+
+  tx();
+
+  return {
+    success: true,
+    deletedId: datorieId,
+    deleted_plati: platiRows.length
+  };
+}
+
+/**
+ * One-Key Stamp Receipt on a single Debt Row (CHI.PRG F1 = PUNNR).
+ * - Calculates remaining unpaid balance (restanta = valoare - achitat).
+ * - If restanta === 0, throws 400 'Rândul este deja achitat integral'.
+ * - Enforces FoxPro 2-slot rule (PLATA1 and PLATA2): if 2 active payments already exist and enforceTwoSlot !== false,
+ *   throws 400 'NU AM UNDE SA SCRIU CHITANTA ( ambele sloturi PLATA1 si PLATA2 sunt ocupate )'.
+ * - Issues a receipt using urmatorul_numar_chitanta (and increments it, or attaches to an existing receipt number if numar_chitanta is passed)
+ *   for the exact restanta of that single row on today's date (data).
+ */
+function stampReceiptOnDebtRow(arg1, arg2, arg3) {
+  let d;
+  let datorieId;
+  let payload;
+  if (arg1 && typeof arg1.prepare === 'function') {
+    d = arg1;
+    datorieId = Number(arg2);
+    payload = arg3 || {};
+  } else {
+    d = getDb();
+    datorieId = Number(arg1);
+    payload = arg2 || {};
+  }
+
+  const row = d
+    .prepare(`
+      SELECT
+        d.*,
+        ROUND(COALESCE(SUM(CASE WHEN c.anulata = 1 THEN 0 ELSE p.suma END), 0), 2) AS achitat,
+        COUNT(CASE WHEN p.id IS NOT NULL AND COALESCE(c.anulata, 0) = 0 THEN 1 END) AS active_payments_count
+      FROM datorii d
+      LEFT JOIN plati p ON p.datorie_id = d.id
+      LEFT JOIN chitante c ON c.id = p.chitanta_id
+      WHERE d.id = ?
+      GROUP BY d.id
+    `)
+    .get(datorieId);
+
+  if (!row) {
+    const err = new Error(`Rândul de datorie #${datorieId} nu a fost găsit.`);
+    err.status = 404;
+    throw err;
+  }
+
+  const restanta = round2(Number(row.valoare) - Number(row.achitat));
+  if (restanta === 0) {
+    const err = new Error('Rândul este deja achitat integral');
+    err.status = 400;
+    throw err;
+  }
+
+  const enforceTwoSlot =
+    payload.enforceTwoSlot !== undefined
+      ? Boolean(payload.enforceTwoSlot)
+      : payload.enforce_two_slot !== undefined
+      ? Boolean(payload.enforce_two_slot)
+      : true;
+
+  const activeCount = Number(row.active_payments_count || 0);
+  if (activeCount >= 2 && enforceTwoSlot) {
+    const err = new Error('NU AM UNDE SA SCRIU CHITANTA ( ambele sloturi PLATA1 si PLATA2 sunt ocupate )');
+    err.status = 400;
+    throw err;
+  }
+
+  const dataEmiterii = String(payload.data || payload.data_emiterii || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const sursa = String(payload.sursa || 'CASA').toUpperCase() === 'BANCA' ? 'BANCA' : 'CASA';
+  const requestedNumar =
+    payload.numar_chitanta !== undefined && payload.numar_chitanta !== null && payload.numar_chitanta !== ''
+      ? Number(payload.numar_chitanta)
+      : payload.numar !== undefined && payload.numar !== null && payload.numar !== ''
+      ? Number(payload.numar)
+      : null;
+
+  let receipt;
+
+  // Check if attaching to an already existing receipt number for this apartment
+  const existingChit =
+    requestedNumar !== null && Number.isFinite(requestedNumar)
+      ? d
+          .prepare('SELECT * FROM chitante WHERE numar = ? AND apartament_id = ? AND anulata = 0 ORDER BY id DESC LIMIT 1')
+          .get(requestedNumar, row.apartament_id)
+      : null;
+
+  if (existingChit) {
+    const tx = d.transaction(() => {
+      d.prepare(`
+        INSERT INTO plati (datorie_id, chitanta_id, suma, data, sursa)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(datorieId, existingChit.id, restanta, dataEmiterii, sursa);
+
+      const allPlati = d
+        .prepare(`
+          SELECT p.suma, p.datorie_id, dt.an, dt.luna, dt.categorie
+          FROM plati p
+          JOIN datorii dt ON dt.id = p.datorie_id
+          WHERE p.chitanta_id = ?
+        `)
+        .all(existingChit.id);
+
+      const paidByCategory = { R: 0, A: 0, F: 0, P: 0 };
+      let newTotal = 0;
+      for (const pl of allPlati) {
+        const cat = String(pl.categorie || 'R').toUpperCase();
+        if (cat in paidByCategory) {
+          paidByCategory[cat] = round2(paidByCategory[cat] + Number(pl.suma));
+        }
+        newTotal = round2(newTotal + Number(pl.suma));
+      }
+
+      const cex = payload.explicatie || buildExplanationCex(paidByCategory);
+      const sumaLitere = numarInLitere(Math.abs(newTotal));
+
+      d.prepare(`
+        UPDATE chitante
+        SET suma = ?, suma_litere = ?, explicatie = ?
+        WHERE id = ?
+      `).run(newTotal, sumaLitere, cex, existingChit.id);
+
+      syncApartmentScalars(d, row.apartament_id);
+      if (sursa === 'CASA') {
+        syncDailyCashSummary(d, dataEmiterii, 1, existingChit.perioada_id || null);
+      }
+
+      receipt = {
+        ...existingChit,
+        suma: newTotal,
+        suma_litere: sumaLitere,
+        explicatie: cex,
+        cex,
+        allocations: allPlati,
+        paidByCategory
+      };
+    });
+    tx();
+  } else {
+    receipt = issueReceipt(d, {
+      apartament_id: row.apartament_id,
+      numar: requestedNumar || undefined,
+      data_emiterii: dataEmiterii,
+      sursa,
+      tip_plata: payload.tip_plata,
+      explicatie: payload.explicatie,
+      allocations: [{ datorie_id: datorieId, suma: restanta }]
+    });
+  }
+
+  const updatedDatorie = d
+    .prepare(`
+      SELECT
+        d.*,
+        ROUND(COALESCE(SUM(CASE WHEN c.anulata = 1 THEN 0 ELSE p.suma END), 0), 2) AS achitat,
+        ROUND(d.valoare - COALESCE(SUM(CASE WHEN c.anulata = 1 THEN 0 ELSE p.suma END), 0), 2) AS restanta,
+        COUNT(CASE WHEN p.id IS NOT NULL AND COALESCE(c.anulata, 0) = 0 THEN 1 END) AS active_payments_count
+      FROM datorii d
+      LEFT JOIN plati p ON p.datorie_id = d.id
+      LEFT JOIN chitante c ON c.id = p.chitanta_id
+      WHERE d.id = ?
+      GROUP BY d.id
+    `)
+    .get(datorieId);
+
+  return {
+    success: true,
+    chitanta: receipt,
+    datorie: updatedDatorie,
+    suma_achitata: restanta,
+    numar_chitanta: receipt.numar,
+    slot: activeCount === 0 ? 'PLATA1' : 'PLATA2',
+    ...receipt
+  };
+}
+
+/**
+ * Cumulative Fund Summary per Apartment (CHI.PRG CTRL+F9=FNDRU, CTRL+F4=FNDRE, CTRL+F5=FNDPE).
+ * Computes total_calculat, total_achitat, and sold_neachitat for categories F, A, P, and R.
+ */
+function getApartmentFundSummary(arg1, arg2) {
+  let d;
+  let apartamentId;
+  if (arg1 && typeof arg1.prepare === 'function') {
+    d = arg1;
+    apartamentId = Number(arg2);
+  } else {
+    d = getDb();
+    apartamentId = Number(arg1);
+  }
+
+  const apt = d.prepare('SELECT * FROM apartamente WHERE id = ?').get(apartamentId);
+  if (!apt) {
+    const err = new Error(`Apartamentul #${apartamentId} nu a fost găsit.`);
+    err.status = 404;
+    throw err;
+  }
+
+  const rows = d
+    .prepare(`
+      SELECT
+        d.categorie,
+        ROUND(COALESCE(SUM(d.valoare), 0), 2) AS total_calculat,
+        ROUND(COALESCE(SUM(COALESCE(p.achitat, 0)), 0), 2) AS total_achitat,
+        ROUND(COALESCE(SUM(d.valoare - COALESCE(p.achitat, 0)), 0), 2) AS sold_neachitat
+      FROM datorii d
+      LEFT JOIN (
+        SELECT pl.datorie_id, SUM(CASE WHEN ch.anulata = 1 THEN 0 ELSE pl.suma END) AS achitat
+        FROM plati pl
+        LEFT JOIN chitante ch ON ch.id = pl.chitanta_id
+        GROUP BY pl.datorie_id
+      ) p ON p.datorie_id = d.id
+      WHERE d.apartament_id = ?
+      GROUP BY d.categorie
+    `)
+    .all(apartamentId);
+
+  const byCat = {
+    F: { total_calculat: 0, total_achitat: 0, sold_neachitat: 0 },
+    A: { total_calculat: 0, total_achitat: 0, sold_neachitat: 0 },
+    P: { total_calculat: 0, total_achitat: 0, sold_neachitat: 0 },
+    R: { total_calculat: 0, total_achitat: 0, sold_neachitat: 0 }
+  };
+
+  for (const r of rows) {
+    const cat = String(r.categorie || '').trim().toUpperCase();
+    if (cat in byCat) {
+      byCat[cat] = {
+        total_calculat: round2(r.total_calculat || 0),
+        total_achitat: round2(r.total_achitat || 0),
+        sold_neachitat: round2(r.sold_neachitat || 0)
+      };
+    }
+  }
+
+  return {
+    apartament_id: apartamentId,
+    fond_rulment: byCat.F,
+    fond_reparatii: byCat.A,
+    penalitati: byCat.P,
+    regie: byCat.R,
+    categories: byCat
+  };
 }
 
 /**
@@ -648,6 +1137,10 @@ module.exports = {
   allocateLumpSum,
   issueReceipt,
   issueCollectiveReceipt,
+  updateDebtRow,
+  deleteDebtRow,
+  stampReceiptOnDebtRow,
+  getApartmentFundSummary,
   voidReceipt,
   syncDailyCashSummary,
   syncApartmentScalars

@@ -70,6 +70,55 @@ function maskOwnerName(name, aptNum, shouldShowNames) {
   return `[GDPR - Ap. ${aptNum}]`;
 }
 
+function parseCuEnergieTermica(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') return val === 1;
+  const s = String(val).trim().toUpperCase();
+  if (s === '2' || s === '0' || s === 'FALSE' || s === 'NU' || s === 'NO' || s === 'FARA') return false;
+  return true;
+}
+
+function resolveYm(dateOpt, anOpt, lunaOpt, isEnd = false) {
+  if (anOpt !== undefined && anOpt !== null && anOpt !== '') {
+    const y = Number(anOpt);
+    if (Number.isFinite(y) && y > 1900) {
+      const m = (lunaOpt !== undefined && lunaOpt !== null && lunaOpt !== '')
+        ? Number(lunaOpt)
+        : (isEnd ? 12 : 1);
+      return y * 100 + m;
+    }
+  }
+  if (dateOpt === undefined || dateOpt === null || dateOpt === '') return null;
+  const s = String(dateOpt).trim();
+  if (!s) return null;
+  const ymMatch = s.match(/^(\d{4})[-/.](\d{1,2})$/);
+  if (ymMatch) {
+    return Number(ymMatch[1]) * 100 + Number(ymMatch[2]);
+  }
+  const myMatch = s.match(/^(\d{1,2})[-/.](\d{4})$/);
+  if (myMatch) {
+    return Number(myMatch[2]) * 100 + Number(myMatch[1]);
+  }
+  const iso = parseCalendarDate(s);
+  if (iso) {
+    const parts = iso.split('-').map(Number);
+    if (parts[0] && parts[1]) return parts[0] * 100 + parts[1];
+  }
+  return null;
+}
+
+function parseBlockTokens(options = {}) {
+  const raw = options.blocuri ?? options.bloc_id ?? options.blocId ?? options.bloc;
+  if (raw === undefined || raw === null || raw === '') return [];
+  const list = Array.isArray(raw) ? raw : String(raw).split(',');
+  const tokens = list.map(t => String(t).trim()).filter(Boolean);
+  if (tokens.length === 1 && ['TOATE', 'ALL', '*'].includes(tokens[0].toUpperCase())) {
+    return [];
+  }
+  return tokens;
+}
+
 /**
  * Loads calculated apartment & block rows for the target period, enriched with ledger arrears & penalties.
  */
@@ -81,19 +130,30 @@ function loadReportPeriodContext(d, options = {}) {
   let blocuri = calc.blocuri;
   let apartamente = calc.apartamente;
 
-  if (options.bloc_id || options.blocId) {
-    const targetBlocId = Number(options.bloc_id || options.blocId);
-    blocuri = blocuri.filter(b => b.id === targetBlocId);
-    apartamente = apartamente.filter(a => a.bloc_id === targetBlocId);
-  } else if (options.bloc) {
-    const targetCode = String(options.bloc).trim().toUpperCase();
-    blocuri = blocuri.filter(b => String(b.bloc || '').trim().toUpperCase() === targetCode);
-    apartamente = apartamente.filter(a => String(a.bloc || '').trim().toUpperCase() === targetCode);
+  const blockTokens = parseBlockTokens(options);
+  if (blockTokens.length > 0) {
+    const matchesBlock = (bId, bCode) => {
+      const codeNorm = String(bCode || '').trim().toUpperCase();
+      return blockTokens.some(tok => {
+        const num = Number(tok);
+        if (Number.isFinite(num) && String(num) === tok && Number(bId) === num) return true;
+        return codeNorm === tok.toUpperCase();
+      });
+    };
+    blocuri = blocuri.filter(b => matchesBlock(b.id, b.bloc));
+    apartamente = apartamente.filter(a => matchesBlock(a.bloc_id, a.bloc));
   }
 
   if (options.apartament_id || options.apartamentId) {
     const targetAptId = Number(options.apartament_id || options.apartamentId);
     apartamente = apartamente.filter(a => a.id === targetAptId);
+  } else if (options.apart || options.unapt || options.UNAPT) {
+    const targetApt = String(options.apart || options.unapt || options.UNAPT).trim();
+    if (targetApt && targetApt.toUpperCase() !== 'TOATE') {
+      apartamente = apartamente.filter(
+        a => String(a.numar_apart || '').trim() === targetApt || a.id === Number(targetApt)
+      );
+    }
   }
 
   // Load unpaid ledger balances per apartment (prior to or across all periods)
@@ -193,7 +253,17 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
   }
 
   const codeUpper = String(rawCode || 'LAR').trim().toUpperCase();
-  const code = codeUpper === 'LRI' ? 'LAR_INST' : codeUpper;
+  let code = codeUpper;
+  if (codeUpper === 'LRI') code = 'LAR_INST';
+  if (codeUpper === 'LSA') {
+    code = 'LSC';
+    options = { ...options, varianta: 'LSA' };
+  }
+  if (codeUpper === 'LFA1') {
+    code = 'LFA';
+    options = { ...options, ordonare: 'BLOC' };
+  }
+
   const catalogEntry = REPORT_CATALOG.find(r => r.code === code) || {
     code,
     menu: 'LISTARE',
@@ -214,16 +284,23 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
   // 1. LAF / LAR (Notice-Board Lists without / with arrears)
   if (code === 'LAF' || code === 'LAR') {
     const includeArrears = code === 'LAR';
+    const termenPlata = options.termen_plata ?? options.term ?? options.TERM ?? null;
+    const fmtRaw = String(options.format_lista || options.format || 'extins').trim().toLowerCase();
+    const isPrescurtat = fmtRaw === 'prescurtat' || fmtRaw === 'scurt' || fmtRaw === 'compact' || fmtRaw === '1';
+    const cuEnergieTermica = parseCuEnergieTermica(options.cu_energie_termica ?? options.cuEnergieTermica ?? options.energie_termica);
+
     const rows = apartamente.map(c => {
       const arr = arrearsMap.get(c.id) || { priorRestanta: 0, totalRestanta: 0, P: 0 };
       const pers = Number(c.persoane || 0) - Number(c.p1_scaz || 0);
       const apaReceCalda = round2(Number(c.apa_rece || 0) + Number(c.can_mnj || 0) + Number(c.apa_calda || 0));
+      const apaCanal = round2(Number(c.apa_rece || 0) + Number(c.can_mnj || 0) + Number(c.can_met || 0));
       const cheltPers = round2(Number(c.curent || 0) + Number(c.gaz || 0) + Number(c.gunoi || 0));
       const cheltCotaParte = round2(
         Number(c.sal_feme || 0) + Number(c.ascensor || 0) + Number(c.ch_admin || 0) +
         Number(c.sal_tesa || 0) + Number(c.ch_sediu || 0) + Number(c.prest_serv || 0) +
         Number(c.chelt_inc || 0) + Number(c.altele || 0) + Number(c.repar_crt || 0) + Number(c.i || 0)
       );
+      const apaCalda = round2(c.apa_calda || 0);
       const incalzire = round2(c.incalzire || 0);
       const canalMeteo = round2(c.can_met || 0);
       const diferente = round2(
@@ -232,6 +309,7 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
       );
       const chiriiSpatii = round2(Number(c.ch_box || 0) + Number(c.ch_hav || 0));
       const fonduri = round2(Number(c.fond_repar || 0) + Number(c.abonament || 0) + Number(c.rulment || 0));
+      const regieComuna = round2(cheltPers + cheltCotaParte + canalMeteo + diferente + chiriiSpatii);
       const totalRegie = round2(c.total_luna || (apaReceCalda + cheltPers + cheltCotaParte + incalzire + canalMeteo + diferente + chiriiSpatii + fonduri));
       const restanta = includeArrears ? round2(arr.priorRestanta || arr.totalRestanta || c.restante || 0) : 0;
       const penalizari = includeArrears ? round2(arr.P || c.penalizari || 0) : 0;
@@ -245,33 +323,56 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
         pers,
         suprafata: Number(c.suprafata || 0),
         apa_rece_calda: apaReceCalda,
+        apa_canal: apaCanal,
+        apa_calda: apaCalda,
         chelt_pers: cheltPers,
         chelt_cota_parte: cheltCotaParte,
         incalzire,
         canal_meteo: canalMeteo,
         diferente,
         chirii_spatii: chiriiSpatii,
+        regie_comuna: regieComuna,
         fonduri,
         total_regie: totalRegie,
         ...(includeArrears ? { restanta, penalizari, total_general: totalGeneral } : {})
       };
     });
 
-    const columns = [
-      { key: 'bloc', label: 'Bloc' },
-      { key: 'apart', label: 'Ap.' },
-      { key: 'nume', label: 'Proprietar' },
-      { key: 'pers', label: 'Pers.' },
-      { key: 'apa_rece_calda', label: 'Apă Rece/Caldă/Can.' },
-      { key: 'chelt_pers', label: 'Chelt. Pers. (Gaz/Gunoi/El.)' },
-      { key: 'chelt_cota_parte', label: 'Chelt. Cotă-Parte' },
-      { key: 'incalzire', label: 'Încălzire' },
-      { key: 'canal_meteo', label: 'Canal Meteo' },
-      { key: 'diferente', label: 'Diferențe' },
-      { key: 'chirii_spatii', label: 'Chirii Spații' },
-      { key: 'fonduri', label: 'Fonduri' },
-      { key: 'total_regie', label: 'Total Lună' }
-    ];
+    let columns;
+    if (isPrescurtat) {
+      columns = [
+        { key: 'bloc', label: 'Bloc' },
+        { key: 'apart', label: 'Ap.' },
+        { key: 'nume', label: 'Proprietar' },
+        { key: 'pers', label: 'Pers.' },
+        { key: 'apa_canal', label: 'Apă + Canal' },
+        ...(cuEnergieTermica
+          ? [
+              { key: 'apa_calda', label: 'Apă Caldă' },
+              { key: 'incalzire', label: 'Încălzire' }
+            ]
+          : []),
+        { key: 'regie_comuna', label: 'Chelt. Comune / Regie' },
+        { key: 'fonduri', label: 'Fonduri' },
+        { key: 'total_regie', label: 'Total Lună' }
+      ];
+    } else {
+      columns = [
+        { key: 'bloc', label: 'Bloc' },
+        { key: 'apart', label: 'Ap.' },
+        { key: 'nume', label: 'Proprietar' },
+        { key: 'pers', label: 'Pers.' },
+        { key: 'apa_rece_calda', label: cuEnergieTermica ? 'Apă Rece/Caldă/Can.' : 'Apă Rece/Can.' },
+        { key: 'chelt_pers', label: 'Chelt. Pers. (Gaz/Gunoi/El.)' },
+        { key: 'chelt_cota_parte', label: 'Chelt. Cotă-Parte' },
+        ...(cuEnergieTermica ? [{ key: 'incalzire', label: 'Încălzire' }] : []),
+        { key: 'canal_meteo', label: 'Canal Meteo' },
+        { key: 'diferente', label: 'Diferențe' },
+        { key: 'chirii_spatii', label: 'Chirii Spații' },
+        { key: 'fonduri', label: 'Fonduri' },
+        { key: 'total_regie', label: 'Total Lună' }
+      ];
+    }
     if (includeArrears) {
       columns.push(
         { key: 'restanta', label: 'Restanțe' },
@@ -281,6 +382,9 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
     }
 
     return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, {
+      termen_plata: termenPlata,
+      format: isPrescurtat ? 'prescurtat' : 'extins',
+      cu_energie_termica: cuEnergieTermica,
       signatures: ['PREȘEDINTE: ' + (asociatie.presedinte || ''), 'ADMINISTRATOR: ' + (asociatie.administrator || ''), 'COMISIA DE CENZORI']
     });
   }
@@ -288,11 +392,28 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
   // 2. LIP / LIR (Individual Payment Slips / Fluturași)
   if (code === 'LIP' || code === 'LIR') {
     const includeArrears = code === 'LIR';
+    const termenPlata = options.termen_plata ?? options.term ?? options.TERM ?? null;
+    const fmtRaw = String(options.format_lista || options.format || 'extins').trim().toLowerCase();
+    const isPrescurtat = fmtRaw === 'prescurtat' || fmtRaw === 'scurt' || fmtRaw === 'compact' || fmtRaw === '1';
+    const cuEnergieTermica = parseCuEnergieTermica(options.cu_energie_termica ?? options.cuEnergieTermica ?? options.energie_termica);
+
     const rows = apartamente.map(c => {
       const arr = arrearsMap.get(c.id) || { priorRestanta: 0, totalRestanta: 0, P: 0 };
       const restanta = includeArrears ? round2(arr.priorRestanta || arr.totalRestanta || c.restante || 0) : 0;
       const penalizari = includeArrears ? round2(arr.P || c.penalizari || 0) : 0;
       const totalLuna = round2(c.total_luna || 0);
+      const diferente = round2(
+        Number(c.difarar || 0) + Number(c.difarac || 0) + Number(c.difcanar || 0) +
+        Number(c.difcanac || 0) + Number(c.difetac || 0) + Number(c.difetin || 0)
+      );
+      const apaCanal = round2(Number(c.apa_rece || 0) + Number(c.can_mnj || 0) + Number(c.can_met || 0));
+      const cheltComune = round2(
+        Number(c.gaz || 0) + Number(c.gunoi || 0) + Number(c.curent_sc || 0) + Number(c.curent_li || 0) +
+        Number(c.ascensor || 0) + Number(c.sal_feme || 0) + Number(c.sal_tesa || 0) +
+        Number(c.ch_admin || 0) + Number(c.ch_sediu || 0) + Number(c.prest_serv || 0) +
+        Number(c.abonament || 0) + Number(c.chelt_inc || 0) + diferente
+      );
+      const fonduri = round2(Number(c.rulment || 0) + Number(c.fond_repar || 0));
       return {
         apartament_id: c.id,
         bloc: c.bloc,
@@ -303,6 +424,7 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
         apa_rece: round2(c.apa_rece),
         can_mnj: round2(c.can_mnj),
         can_met: round2(c.can_met),
+        apa_canal: apaCanal,
         apa_calda: round2(c.apa_calda),
         incalzire: round2(c.incalzire),
         gaz: round2(c.gaz),
@@ -317,12 +439,11 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
         prest_serv: round2(c.prest_serv),
         abonament: round2(c.abonament),
         chelt_inc: round2(c.chelt_inc),
-        diferente: round2(
-          Number(c.difarar || 0) + Number(c.difarac || 0) + Number(c.difcanar || 0) +
-          Number(c.difcanac || 0) + Number(c.difetac || 0) + Number(c.difetin || 0)
-        ),
+        diferente,
+        chelt_comune: cheltComune,
         rulment: round2(c.rulment),
         fond_repar: round2(c.fond_repar),
+        fonduri,
         max_fr: round2(c.max_fr),
         calc_fr: round2(c.calc_fr),
         achitat_fr: round2(Number(c.calc_fr || 0) - Number(c.plat_fr || 0)),
@@ -333,25 +454,56 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
       };
     });
 
-    const columns = [
-      { key: 'bloc', label: 'Bloc' },
-      { key: 'apart', label: 'Ap.' },
-      { key: 'nume', label: 'Titular' },
-      { key: 'persoane_calcul', label: 'Pers.' },
-      { key: 'apa_rece', label: 'Apă Rece' },
-      { key: 'can_mnj', label: 'Canal' },
-      { key: 'apa_calda', label: 'Apă Caldă' },
-      { key: 'incalzire', label: 'Încălzire' },
-      { key: 'gunoi', label: 'Gunoi' },
-      { key: 'curent_sc', label: 'Curent' },
-      { key: 'sal_tesa', label: 'Admin/Salarii' },
-      { key: 'fond_repar', label: 'Fond Rep.' },
-      { key: 'total_luna', label: 'Total Lună' },
-      { key: 'restanta', label: 'Restanță' },
-      { key: 'penalizari', label: 'Penalități' },
-      { key: 'total_de_plata', label: 'Total Plată' }
-    ];
-    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows);
+    let columns;
+    if (isPrescurtat) {
+      columns = [
+        { key: 'bloc', label: 'Bloc' },
+        { key: 'apart', label: 'Ap.' },
+        { key: 'nume', label: 'Titular' },
+        { key: 'persoane_calcul', label: 'Pers.' },
+        { key: 'apa_canal', label: 'Apă + Canal' },
+        ...(cuEnergieTermica
+          ? [
+              { key: 'apa_calda', label: 'Apă Caldă' },
+              { key: 'incalzire', label: 'Încălzire' }
+            ]
+          : []),
+        { key: 'chelt_comune', label: 'Chelt. Comune / Admin' },
+        { key: 'fonduri', label: 'Fonduri' },
+        { key: 'total_luna', label: 'Total Lună' },
+        { key: 'restanta', label: 'Restanță' },
+        { key: 'penalizari', label: 'Penalități' },
+        { key: 'total_de_plata', label: 'Total Plată' }
+      ];
+    } else {
+      columns = [
+        { key: 'bloc', label: 'Bloc' },
+        { key: 'apart', label: 'Ap.' },
+        { key: 'nume', label: 'Titular' },
+        { key: 'persoane_calcul', label: 'Pers.' },
+        { key: 'apa_rece', label: 'Apă Rece' },
+        { key: 'can_mnj', label: 'Canal' },
+        ...(cuEnergieTermica
+          ? [
+              { key: 'apa_calda', label: 'Apă Caldă' },
+              { key: 'incalzire', label: 'Încălzire' }
+            ]
+          : []),
+        { key: 'gunoi', label: 'Gunoi' },
+        { key: 'curent_sc', label: 'Curent' },
+        { key: 'sal_tesa', label: 'Admin/Salarii' },
+        { key: 'fond_repar', label: 'Fond Rep.' },
+        { key: 'total_luna', label: 'Total Lună' },
+        { key: 'restanta', label: 'Restanță' },
+        { key: 'penalizari', label: 'Penalități' },
+        { key: 'total_de_plata', label: 'Total Plată' }
+      ];
+    }
+    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, {
+      termen_plata: termenPlata,
+      format: isPrescurtat ? 'prescurtat' : 'extins',
+      cu_energie_termica: cuEnergieTermica
+    });
   }
 
   // 3. LP1 / LP2 (City Hall Lists without / with arrears)
@@ -539,50 +691,129 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
 
   // 8. LFA (Invoices & Mathematical Reconciliation Synthesis)
   if (code === 'LFA') {
+    const ordonare = String(options.ordonare || 'SERVICIU').trim().toUpperCase() === 'BLOC' ? 'BLOC' : 'SERVICIU';
+    const cuEnergieTermica = parseCuEnergieTermica(options.cu_energie_termica ?? options.cuEnergieTermica ?? options.energie_termica);
+    const defSrc = { ...(options.defalcare_lfa || {}), ...options };
+    const m11 = round2(defSrc.m11 || 0);
+    const m12 = round2(defSrc.m12 || 0);
+    const m13 = round2(defSrc.m13 || 0);
+    const m14 = round2(defSrc.m14 || 0);
+    const m15 = round2(defSrc.m15 || 0);
+    const m16 = round2(defSrc.m16 || 0);
+    const m21 = round2(defSrc.m21 || 0);
+    const m22 = round2(defSrc.m22 || 0);
+    const m23 = round2(defSrc.m23 || 0);
+    const m24 = round2(defSrc.m24 || 0);
+    const m25 = round2(defSrc.m25 || 0);
+    const m31 = round2(defSrc.m31 || 0);
+    const m32 = round2(defSrc.m32 || 0);
+    const m33 = round2(defSrc.m33 || 0);
+    const m34 = round2(defSrc.m34 || 0);
+    const defalcareLfa = {
+      m11, m12, m13, m14, m15, m16,
+      total_salarii: round2(m11 + m12 + m13 + m14 + m15 + m16),
+      m21, m22, m23, m24, m25,
+      total_admin: round2(m21 + m22 + m23 + m24 + m25),
+      m31, m32, m33, m34,
+      total_colaboratori: round2(m31 + m32 + m33 + m34),
+      mchb: String(defSrc.mchb ?? ''),
+      mchs: String(defSrc.mchs ?? ''),
+      mchi: String(defSrc.mchi ?? ''),
+      nota1: String(defSrc.nota1 ?? ''),
+      nota2: String(defSrc.nota2 ?? ''),
+      data_citirii: String(defSrc.data_citirii ?? '')
+    };
+
     const categories = [
       { key: 'apa_rece', label: 'Apă Rece' },
       { key: 'can_mnj', label: 'Canalizare Menajeră' },
       { key: 'can_met', label: 'Apă Meteo' },
-      { key: 'apa_calda', label: 'Apă Caldă' },
-      { key: 'incalzire', label: 'Încălzire' },
+      { key: 'apa_calda', label: 'Apă Caldă', thermal: true },
+      { key: 'incalzire', label: 'Încălzire', thermal: true },
       { key: 'gaz', label: 'Gaze Naturale' },
       { key: 'gunoi', label: 'Salubritate (Gunoi)' },
       { key: 'curent', label: 'Energie Electrică' },
       { key: 'ascensor', label: 'Ascensor' },
       { key: 'sal_tesa', label: 'Salarii TESA / Admin' },
       { key: 'sal_feme', label: 'Salarii Îngrijitor' },
-      { key: 'ch_admin', label: 'Cheltuieli Administrative' },
-      { key: 'ch_sediu', label: 'Cheltuieli Sediu' },
-      { key: 'prest_serv', label: 'Prestări Servicii' },
+      { key: 'ch_admin', label: defalcareLfa.mchb || 'Cheltuieli Administrative' },
+      { key: 'ch_sediu', label: defalcareLfa.mchs || 'Cheltuieli Sediu' },
+      { key: 'prest_serv', label: defalcareLfa.mchi || 'Prestări Servicii' },
       { key: 'abonament', label: 'Abonamente' }
     ];
-    const rows = categories.map(cat => {
-      const blocSum = round2(blocuri.reduce((s, b) => s + Number(b[cat.key] || 0), 0));
-      const aptSum = round2(apartamente.reduce((s, a) => s + Number(a[cat.key] || 0), 0));
-      return {
-        categorie: cat.label,
-        facturat_blocuri: blocSum,
-        repartizat_apartamente: aptSum,
-        diferenta_rotunjire: round2(blocSum - aptSum)
-      };
-    });
+
+    const activeCategories = categories.filter(cat => cuEnergieTermica || !cat.thermal);
+
+    let rows = [];
+    if (ordonare === 'BLOC') {
+      const sortedBlocs = [...blocuri].sort((a, b) => String(a.bloc || '').localeCompare(String(b.bloc || '')));
+      for (const b of sortedBlocs) {
+        const blocApts = apartamente.filter(a => a.bloc_id === b.id || String(a.bloc || '') === String(b.bloc || ''));
+        for (const cat of activeCategories) {
+          const blocSum = round2(Number(b[cat.key] || 0));
+          const aptSum = round2(blocApts.reduce((s, a) => s + Number(a[cat.key] || 0), 0));
+          rows.push({
+            bloc: b.bloc,
+            categorie: cat.label,
+            facturat_blocuri: blocSum,
+            repartizat_apartamente: aptSum,
+            diferenta_rotunjire: round2(blocSum - aptSum)
+          });
+        }
+      }
+    } else {
+      rows = activeCategories.map(cat => {
+        const blocSum = round2(blocuri.reduce((s, b) => s + Number(b[cat.key] || 0), 0));
+        const aptSum = round2(apartamente.reduce((s, a) => s + Number(a[cat.key] || 0), 0));
+        return {
+          categorie: cat.label,
+          facturat_blocuri: blocSum,
+          repartizat_apartamente: aptSum,
+          diferenta_rotunjire: round2(blocSum - aptSum)
+        };
+      });
+    }
+
     const columns = [
+      ...(ordonare === 'BLOC' ? [{ key: 'bloc', label: 'Bloc' }] : []),
       { key: 'categorie', label: 'Categorie Cheltuială' },
       { key: 'facturat_blocuri', label: 'Total Blocuri (RON)' },
       { key: 'repartizat_apartamente', label: 'Total Repartizat Ap. (RON)' },
       { key: 'diferenta_rotunjire', label: 'Diferență (RON)' }
     ];
-    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows);
+    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, {
+      ordonare,
+      cu_energie_termica: cuEnergieTermica,
+      defalcare_lfa: defalcareLfa
+    });
   }
 
   // 9. CCA (Cash Register / Registrul de Casă)
   if (code === 'CCA') {
-    const rawCasa = d.prepare('SELECT * FROM casa ORDER BY data ASC, id ASC').all();
+    const rawDi = options.data_inceput || options.vdafi || options.VDAFI || options.di || null;
+    const rawDs = options.data_sfarsit || options.vdafs || options.VDAFS || options.ds || null;
+    const dataInceput = rawDi ? (parseCalendarDate(rawDi) || String(rawDi).trim()) : null;
+    const dataSfarsit = rawDs ? (parseCalendarDate(rawDs) || String(rawDs).trim()) : null;
+
+    const whereClauses = [];
+    const params = [];
+    if (dataInceput && dataSfarsit) {
+      whereClauses.push('data BETWEEN ? AND ?');
+      params.push(dataInceput, dataSfarsit);
+    } else if (dataInceput) {
+      whereClauses.push('data >= ?');
+      params.push(dataInceput);
+    } else if (dataSfarsit) {
+      whereClauses.push('data <= ?');
+      params.push(dataSfarsit);
+    }
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const rawCasa = d.prepare(`SELECT * FROM casa ${whereSql} ORDER BY data ASC, id ASC`).all(...params);
     let sold = Number(options.sold_initial || 0);
     const rows = [
       {
         document: '-',
-        data: `${period.an}-${String(period.luna).padStart(2, '0')}-01`,
+        data: dataInceput || `${period.an}-${String(period.luna).padStart(2, '0')}-01`,
         explicatie: 'SOLD ZIUA PRECEDENTA',
         incasare: 0,
         plata: 0,
@@ -611,7 +842,10 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
       { key: 'plata', label: 'Plăți (RON)' },
       { key: 'sold', label: 'Sold (RON)' }
     ];
-    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows);
+    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, {
+      data_inceput: dataInceput,
+      data_sfarsit: dataSfarsit
+    });
   }
 
   // 10. CBA (Bank Journal / Contul Gestiunii Bancă)
@@ -892,15 +1126,25 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
 
   // 19. RE1 & LAR_INST (Detailed Arrears & Penalties / Court Dossier)
   if (code === 'RE1' || code === 'LAR_INST') {
+    const startYm = resolveYm(options.data_inceput || options.di || options.DI, options.an_inceput, options.luna_inceput, false);
+    const endYm = resolveYm(options.data_sfarsit || options.ds || options.DS, options.an_sfarsit, options.luna_sfarsit, true);
+    const minYm = startYm && endYm ? Math.min(startYm, endYm) : startYm;
+    const maxYm = startYm && endYm ? Math.max(startYm, endYm) : endYm;
+
     const rows = [];
     for (const c of apartamente) {
       const penCalc = calculatePenalties(d, c.id, targetDate);
       for (const item of penCalc.rows) {
         if (item.restanta <= 0) continue;
+        const itemYm = Number(item.an) * 100 + Number(item.luna);
+        if (minYm && itemYm < minYm) continue;
+        if (maxYm && itemYm > maxYm) continue;
         rows.push({
           bloc: c.bloc,
           apart: c.numar_apart,
           nume: c.nume_proprietar,
+          an: item.an,
+          luna: item.luna,
           perioada: `${LUNI_RO[item.luna] || item.luna} ${item.an}`,
           categorie: item.categorie,
           data_scadenta: item.data_scadenta,
@@ -927,6 +1171,9 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
     ];
     return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, {
       target_date: targetDate,
+      data_inceput: options.data_inceput || options.di || null,
+      data_sfarsit: options.data_sfarsit || options.ds || null,
+      blocuri: blocuri.map(b => b.bloc),
       legal_header: code === 'LAR_INST' ? 'FIȘĂ DE CONT PENTRU INSTANȚĂ (L. 196/2018)' : undefined
     });
   }
@@ -934,21 +1181,55 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
   // 20. CED (Apartment Multi-Month Detailed Breakdown)
   if (code === 'CED') {
     const targetApt = apartamente[0];
+    const startYm = resolveYm(options.data_inceput || options.di || options.DI, options.an_inceput, options.luna_inceput, false);
+    const endYm = resolveYm(options.data_sfarsit || options.ds || options.DS, options.an_sfarsit, options.luna_sfarsit, true);
+    const hasRange = Boolean(startYm || endYm);
+    const minYm = startYm && endYm ? Math.min(startYm, endYm) : startYm;
+    const maxYm = startYm && endYm ? Math.max(startYm, endYm) : endYm;
+
     let snaps = [];
     if (targetApt) {
-      snaps = d
-        .prepare(`
-          SELECT * FROM apartamente_luna
-          WHERE bloc = ? AND numar_apart = ?
-          ORDER BY an DESC, luna DESC
-          LIMIT 12
-        `)
-        .all(String(targetApt.bloc || ''), String(targetApt.numar_apart || ''));
+      if (hasRange) {
+        const rangeConds = ['bloc = ?', 'numar_apart = ?'];
+        const rangeParams = [String(targetApt.bloc || ''), String(targetApt.numar_apart || '')];
+        if (minYm && maxYm) {
+          rangeConds.push('(an * 100 + luna) BETWEEN ? AND ?');
+          rangeParams.push(minYm, maxYm);
+        } else if (minYm) {
+          rangeConds.push('(an * 100 + luna) >= ?');
+          rangeParams.push(minYm);
+        } else if (maxYm) {
+          rangeConds.push('(an * 100 + luna) <= ?');
+          rangeParams.push(maxYm);
+        }
+        snaps = d
+          .prepare(`
+            SELECT * FROM apartamente_luna
+            WHERE ${rangeConds.join(' AND ')}
+            ORDER BY an DESC, luna DESC
+          `)
+          .all(...rangeParams);
+      } else {
+        snaps = d
+          .prepare(`
+            SELECT * FROM apartamente_luna
+            WHERE bloc = ? AND numar_apart = ?
+            ORDER BY an DESC, luna DESC
+            LIMIT 12
+          `)
+          .all(String(targetApt.bloc || ''), String(targetApt.numar_apart || ''));
+      }
     }
     if (snaps.length === 0 && targetApt) {
-      snaps = [{ ...targetApt, an: period.an, luna: period.luna }];
+      const curYm = Number(period.an) * 100 + Number(period.luna);
+      const inRange = (!minYm || curYm >= minYm) && (!maxYm || curYm <= maxYm);
+      if (!hasRange || inRange) {
+        snaps = [{ ...targetApt, an: period.an, luna: period.luna }];
+      }
     }
     const rows = snaps.map(s => ({
+      an: s.an,
+      luna: s.luna,
       perioada: `${LUNI_RO[s.luna] || s.luna} ${s.an}`,
       bloc: s.bloc,
       apart: s.numar_apart,
@@ -982,7 +1263,12 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
       { key: 'fond_repar', label: 'Fond Rep.' },
       { key: 'total_luna', label: 'Total Lună' }
     ];
-    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows);
+    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, {
+      data_inceput: options.data_inceput || options.di || null,
+      data_sfarsit: options.data_sfarsit || options.ds || null,
+      start_ym: minYm,
+      end_ym: maxYm
+    });
   }
 
   // 21. SRU / SFR / SPE (Working Fund / Repair Fund / Penalties Ledger Status)
@@ -1109,37 +1395,157 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
     return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows);
   }
 
-  // 25. LSC (Dunning Letters / Scrisori Somație Restanțieri)
+  // 25. LSC (Dunning Letters / Scrisori Somație Restanțieri & LSA Signature Table)
   if (code === 'LSC') {
+    const rawZilim = options.zilim || options.ZILIM || options.data_limita_plati || null;
+    const zilim = rawZilim ? (parseCalendarDate(rawZilim) || String(rawZilim).trim()) : null;
+    const panaLaAn = Number(options.pana_la_an || options.lan || options.LAN || 0);
+    const panaLaLuna = Number(options.pana_la_luna || options.lun || options.LUN || 0);
+    const cutoffYm = panaLaAn > 0
+      ? (panaLaAn * 100 + (panaLaLuna > 0 ? panaLaLuna : 12))
+      : resolveYm(options.pana_la || options.data_sfarsit, null, null, true);
+    const isLsa = String(options.varianta || '').trim().toUpperCase() === 'LSA';
+    const dataSistarii = options.data_sistarii || options.datas || targetDate;
+
+    const cutoffDebtStmt = (zilim || cutoffYm)
+      ? d.prepare(`
+          SELECT
+            d.id,
+            d.apartament_id,
+            d.categorie,
+            d.an,
+            d.luna,
+            d.valoare,
+            ROUND(COALESCE(SUM(
+              CASE
+                WHEN ch.anulata = 1 THEN 0
+                WHEN ? IS NOT NULL AND COALESCE(pl.data, ch.data_emiterii) > ? THEN 0
+                ELSE pl.suma
+              END
+            ), 0), 2) AS achitat
+          FROM datorii d
+          LEFT JOIN plati pl ON pl.datorie_id = d.id
+          LEFT JOIN chitante ch ON ch.id = pl.chitanta_id
+          WHERE d.apartament_id = ?
+            AND (? IS NULL OR (d.an * 100 + d.luna) <= ?)
+          GROUP BY d.id
+          ORDER BY d.an ASC, d.luna ASC, d.id ASC
+        `)
+      : null;
+
     const rows = [];
+    const borderouSemnaturi = [];
+
     for (const c of apartamente) {
-      const arr = arrearsMap.get(c.id);
-      const rest = round2(arr?.totalRestanta || 0);
-      if (rest <= 0) continue;
-      const pen = calculatePenalties(d, c.id, targetDate);
+      let rest = 0;
+      let oldestPeriod = '-';
+      let penTotal = 0;
+
+      if (cutoffDebtStmt) {
+        const rawDebts = cutoffDebtStmt.all(zilim, zilim, c.id, cutoffYm, cutoffYm);
+        const mappedDebts = [];
+        for (const r of rawDebts) {
+          const rRest = round2(Number(r.valoare || 0) - Number(r.achitat || 0));
+          const cat = String(r.categorie || 'R').toUpperCase();
+          if (cat !== 'P') {
+            rest = round2(rest + rRest);
+            if (rRest > 0 && oldestPeriod === '-') {
+              oldestPeriod = `${LUNI_RO[r.luna] || r.luna} ${r.an}`;
+            }
+          }
+          mappedDebts.push({
+            id: r.id,
+            an: r.an,
+            luna: r.luna,
+            categorie: cat,
+            valoare: Number(r.valoare || 0),
+            achitat: Number(r.achitat || 0),
+            restanta: rRest
+          });
+        }
+        rest = round2(rest);
+        if (rest <= 0) continue;
+        const penCalc = calculatePenalties(mappedDebts, targetDate, {
+          proc_penal: asociatie.proc_penalizare,
+          zile_penal: asociatie.zile_penalizare
+        });
+        penTotal = round2(penCalc.total_penalizare || 0);
+      } else {
+        const arr = arrearsMap.get(c.id);
+        rest = round2(arr?.totalRestanta || 0);
+        if (rest <= 0) continue;
+        oldestPeriod = arr?.oldestPeriod || '-';
+        const pen = calculatePenalties(d, c.id, targetDate);
+        penTotal = round2(pen.total_penalizare || 0);
+      }
+
+      const totalDatorat = round2(rest + penTotal);
+      borderouSemnaturi.push({
+        bloc: c.bloc,
+        apart: c.numar_apart,
+        nume: c.nume_proprietar,
+        restanta: rest,
+        penalitati: penTotal,
+        total_datorat: totalDatorat,
+        data_sistarii: dataSistarii,
+        semnatura: ''
+      });
+
       rows.push({
         bloc: c.bloc,
         apart: c.numar_apart,
         nume: c.nume_proprietar,
-        luna_veche: arr.oldestPeriod || '-',
+        luna_veche: oldestPeriod,
         debit_principal: rest,
-        penalitati: pen.total_penalizare,
-        total_somat: round2(rest + pen.total_penalizare),
-        termen_plata: options.datas || targetDate,
-        text_somatie: `Prin prezenta vă somăm ca până la data de ${options.datas || targetDate} să achitați debitul restant în sumă de ${round2(rest + pen.total_penalizare)} RON, în caz contrar urmând a vă acționa în judecată conform Legii 196/2018.`
+        restanta: rest,
+        penalitati: penTotal,
+        total_somat: totalDatorat,
+        total_datorat: totalDatorat,
+        termen_plata: dataSistarii,
+        data_sistarii: dataSistarii,
+        semnatura: '',
+        text_somatie: `Prin prezenta vă somăm ca până la data de ${dataSistarii} să achitați debitul restant în sumă de ${totalDatorat} RON, în caz contrar urmând a vă acționa în judecată conform Legii 196/2018.`
       });
     }
-    const columns = [
-      { key: 'bloc', label: 'Bloc' },
-      { key: 'apart', label: 'Ap.' },
-      { key: 'nume', label: 'Destinatar' },
-      { key: 'luna_veche', label: 'Vechime' },
-      { key: 'debit_principal', label: 'Debit Restant' },
-      { key: 'penalitati', label: 'Penalități' },
-      { key: 'total_somat', label: 'Total Somat (RON)' },
-      { key: 'termen_plata', label: 'Termen Conformare' }
-    ];
-    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows);
+
+    const columns = isLsa
+      ? [
+          { key: 'bloc', label: 'Bloc' },
+          { key: 'apart', label: 'Ap.' },
+          { key: 'nume', label: 'Proprietar' },
+          { key: 'restanta', label: 'Restanță' },
+          { key: 'penalitati', label: 'Penalități' },
+          { key: 'total_datorat', label: 'Total Datorat (RON)' },
+          { key: 'data_sistarii', label: 'Data Sistării' },
+          { key: 'semnatura', label: 'Semnătură' }
+        ]
+      : [
+          { key: 'bloc', label: 'Bloc' },
+          { key: 'apart', label: 'Ap.' },
+          { key: 'nume', label: 'Destinatar' },
+          { key: 'luna_veche', label: 'Vechime' },
+          { key: 'debit_principal', label: 'Debit Restant' },
+          { key: 'penalitati', label: 'Penalități' },
+          { key: 'total_somat', label: 'Total Somat (RON)' },
+          { key: 'termen_plata', label: 'Termen Conformare' }
+        ];
+
+    return buildResponse(
+      isLsa ? { ...catalogEntry, frx: 'LSA.FRX' } : catalogEntry,
+      period,
+      asociatie,
+      showNames,
+      columns,
+      rows,
+      {
+        varianta: isLsa ? 'LSA' : 'LSC',
+        zilim,
+        pana_la_an: panaLaAn || null,
+        pana_la_luna: panaLaLuna || null,
+        cutoff_ym: cutoffYm,
+        borderou_semnaturi: borderouSemnaturi
+      }
+    );
   }
 
   // 26. LVE (Expired Metrology / Verificări Metrologice Expirate — ignores empty dates per Edge Case #15)
@@ -1189,12 +1595,13 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
   if (code === 'COM') {
     const refAn = Number(options.ref_an || period.an);
     const refLuna = Number(options.ref_luna || (period.luna > 1 ? period.luna - 1 : 12));
+    const procTolerat = Number(options.proc_tolerat ?? options.proc ?? 0);
     const refSnaps = d
       .prepare('SELECT bloc, numar_apart, total_luna FROM apartamente_luna WHERE an = ? AND luna = ?')
       .all(refAn, refLuna);
     const refMap = new Map(refSnaps.map(s => [`${s.bloc}:${s.numar_apart}`, Number(s.total_luna || 0)]));
 
-    const rows = apartamente.map(c => {
+    let rows = apartamente.map(c => {
       const totalC = round2(c.total_luna || 0);
       const totalR = round2(refMap.get(`${c.bloc}:${c.numar_apart}`) || 0);
       const dif = round2(totalC - totalR);
@@ -1209,6 +1616,9 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
         procent_variatie: procVar
       };
     });
+    if (procTolerat > 0) {
+      rows = rows.filter(r => Math.abs(r.procent_variatie) > procTolerat);
+    }
     const columns = [
       { key: 'bloc', label: 'Bloc' },
       { key: 'apart', label: 'Ap.' },
@@ -1218,7 +1628,11 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
       { key: 'diferenta', label: 'Diferență (RON)' },
       { key: 'procent_variatie', label: 'Variație (%)' }
     ];
-    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows);
+    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, {
+      ref_an: refAn,
+      ref_luna: refLuna,
+      proc_tolerat: procTolerat
+    });
   }
 
   // 28. IN1 & IN2 (Collections by Block/Apartment or by Receipt Number)
@@ -1228,6 +1642,71 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
         ? 'b.bloc ASC, CAST(a.numar_apart AS INTEGER) ASC, c.numar ASC'
         : 'c.numar ASC, c.id ASC';
 
+    const rawDi = options.data_inceput || options.di || options.DI || options.zinc || options.ZINC || null;
+    const rawDs = options.data_sfarsit || options.ds || options.DS || options.zisf || options.ZISF || null;
+    const dataInceput = rawDi ? (parseCalendarDate(rawDi) || String(rawDi).trim()) : null;
+    const dataSfarsit = rawDs ? (parseCalendarDate(rawDs) || String(rawDs).trim()) : null;
+
+    const rawCat = String(options.categorie ?? options.cee ?? options.CEE ?? '').trim().toUpperCase();
+    const catFilter = rawCat && !['TOATE', 'ALL', '*'].includes(rawCat) ? rawCat : null;
+
+    const blockTokens = parseBlockTokens(options);
+    const targetAptId = options.apartament_id || options.apartamentId ? Number(options.apartament_id || options.apartamentId) : null;
+    const rawAptNum = options.apart || options.unapt || options.UNAPT;
+    const targetAptNum = rawAptNum && String(rawAptNum).trim().toUpperCase() !== 'TOATE' ? String(rawAptNum).trim() : null;
+
+    const whereClauses = [];
+    const params = [];
+
+    if (dataInceput && dataSfarsit) {
+      whereClauses.push('COALESCE(p.data, c.data_emiterii) BETWEEN ? AND ?');
+      params.push(dataInceput, dataSfarsit);
+    } else if (dataInceput) {
+      whereClauses.push('COALESCE(p.data, c.data_emiterii) >= ?');
+      params.push(dataInceput);
+    } else if (dataSfarsit) {
+      whereClauses.push('COALESCE(p.data, c.data_emiterii) <= ?');
+      params.push(dataInceput ? dataSfarsit : dataSfarsit);
+    }
+
+    if (blockTokens.length > 0) {
+      const subConds = [];
+      for (const tok of blockTokens) {
+        const num = Number(tok);
+        if (Number.isFinite(num) && String(num) === tok) {
+          subConds.push('(COALESCE(d.bloc_id, c.bloc_id, a.bloc_id) = ? OR UPPER(COALESCE(b.bloc, c.cod_bloc, \'\')) = UPPER(?))');
+          params.push(num, tok);
+        } else {
+          subConds.push('UPPER(COALESCE(b.bloc, c.cod_bloc, \'\')) = UPPER(?)');
+          params.push(tok);
+        }
+      }
+      whereClauses.push(`(${subConds.join(' OR ')})`);
+    }
+
+    if (targetAptId) {
+      whereClauses.push('COALESCE(d.apartament_id, c.apartament_id, a.id) = ?');
+      params.push(targetAptId);
+    } else if (targetAptNum) {
+      const numApt = Number(targetAptNum);
+      if (Number.isFinite(numApt)) {
+        whereClauses.push('(COALESCE(a.numar_apart, c.numar_apart, \'\') = ? OR COALESCE(d.apartament_id, c.apartament_id, a.id) = ?)');
+        params.push(targetAptNum, numApt);
+      } else {
+        whereClauses.push('COALESCE(a.numar_apart, c.numar_apart, \'\') = ?');
+        params.push(targetAptNum);
+      }
+    }
+
+    if (catFilter) {
+      whereClauses.push('UPPER(COALESCE(d.categorie, \'R\')) = ?');
+      params.push(catFilter);
+    }
+
+    const hasFilters = whereClauses.length > 0;
+    const whereSql = hasFilters ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const limitSql = hasFilters ? '' : 'LIMIT 5000';
+
     const rawPayments = d
       .prepare(`
         SELECT
@@ -1235,6 +1714,7 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
           c.serie,
           c.numar,
           c.data_emiterii,
+          COALESCE(p.data, c.data_emiterii) AS data_plata,
           c.anulata,
           c.tip_plata,
           c.suma AS suma_chitanta,
@@ -1251,14 +1731,15 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
         LEFT JOIN datorii d ON d.id = p.datorie_id
         LEFT JOIN apartamente a ON a.id = COALESCE(d.apartament_id, c.apartament_id)
         LEFT JOIN blocuri b ON b.id = COALESCE(d.bloc_id, c.bloc_id, a.bloc_id)
+        ${whereSql}
         ORDER BY ${orderBy}
-        LIMIT 500
+        ${limitSql}
       `)
-      .all();
+      .all(...params);
 
     const rows = rawPayments.map(r => ({
       numar_chitanta: `${r.serie || 'ORH'}-${String(r.numar).padStart(5, '0')}`,
-      data: r.data_emiterii,
+      data: r.data_plata || r.data_emiterii,
       bloc: r.bloc,
       apart: r.apart,
       nume: r.nume,
@@ -1281,7 +1762,11 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
       { key: 'status', label: 'Stare' },
       { key: 'suma', label: 'Sumă Încasată (RON)' }
     ];
-    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows);
+    return buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, {
+      data_inceput: dataInceput,
+      data_sfarsit: dataSfarsit,
+      categorie: catFilter || 'TOATE'
+    });
   }
 
   throw new Error(`Cod raport necunoscut: ${code}`);
@@ -1290,7 +1775,7 @@ function generateReport(dbOrCode, maybeCode, maybeOptions = {}) {
 function buildResponse(catalogEntry, period, asociatie, showNames, columns, rows, extraMeta = {}) {
   const numericTotals = {};
   for (const col of columns) {
-    if (['bloc', 'apart', 'nume', 'pozitie', 'cp_in', 'categorie', 'document', 'data', 'explicatie', 'act_pas', 'explicatie_completa', 'platitor', 'beneficiar', 'iban_beneficiar', 'suma_litere', 'semnatura', 'mod_r_dif', 'mod_r_inc', 'ser_ar_bu', 'in_ar_bu_gol', 'ser_ar_ba1', 'in_ar_ba1_gol', 'serie_r1', 'in_r1_gol', 'serie_r2', 'in_r2_gol', 'luna_veche', 'perioada', 'data_scadenta', 'tip_debransare', 'termen_plata', 'tip_contor', 'serie', 'data_verificare', 'status', 'numar_chitanta', 'perioada_achitata', 'sursa'].includes(col.key)) {
+    if (['bloc', 'apart', 'nume', 'pozitie', 'cp_in', 'categorie', 'document', 'data', 'explicatie', 'act_pas', 'explicatie_completa', 'platitor', 'beneficiar', 'iban_beneficiar', 'suma_litere', 'semnatura', 'mod_r_dif', 'mod_r_inc', 'ser_ar_bu', 'in_ar_bu_gol', 'ser_ar_ba1', 'in_ar_ba1_gol', 'serie_r1', 'in_r1_gol', 'serie_r2', 'in_r2_gol', 'luna_veche', 'perioada', 'data_scadenta', 'tip_debransare', 'termen_plata', 'data_sistarii', 'tip_contor', 'serie', 'data_verificare', 'status', 'numar_chitanta', 'perioada_achitata', 'sursa'].includes(col.key)) {
       continue;
     }
     let sum = 0;

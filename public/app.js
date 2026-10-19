@@ -1166,6 +1166,7 @@ function populateIndecsiApartamente() {
         <td><input type="number" class="table-input" value="${ap.iv_ac_ba1 || 0}" step="0.1" data-f="iv_ac_ba1"></td>
         <td><input type="number" class="table-input ${isAcBaInv ? 'input-error' : ''}" value="${ap.in_ac_ba1 || 0}" step="0.1" data-f="in_ac_ba1"></td>
         <td><strong>${cAcBa.toFixed(1)}</strong></td>
+        <td><button class="btn btn-small btn-secondary" onclick="window.egalizareIndexuriApartament(${ap.id})" title="AIA.PRG tasta +=EGAL: Setează Index Nou = Index Vechi (Consum=0)">➕</button></td>
       </tr>
     `;
   }).join('');
@@ -1187,6 +1188,38 @@ async function saveIndecsiApartamente() {
   populateIndecsiApartamente();
   actualizeazaStatsDiferenteApa();
 }
+
+// AIA.PRG tasta +=EGAL — Egalizare Indexuri (Index Nou = Index Vechi, Consum = 0)
+window.egalizareIndexuriApartament = async function(apartamentId) {
+  const apId = apartamentId || apartamenteCache[0]?.id;
+  if (!apId) return showAlert('Selectați un apartament!', 'warning');
+  const res = await apiPost(`/api/operatiuni/apartamente/${apId}/egalizare-indexuri`, {});
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Indecșii apartamentului au fost egalizați (Index Nou = Index Vechi, Consum = 0)!`, 'success');
+  if (currentBlocId) {
+    apartamenteCache = await apiGet(`/api/blocuri/${currentBlocId}/apartamente`);
+    populateIndecsiApartamente();
+    actualizeazaStatsDiferenteApa();
+  }
+  return res;
+};
+
+window.batchEgalizareIndexuri = async function(opts = {}) {
+  const scope = opts.scope || document.getElementById('egal-scope')?.value || (currentBlocId ? 'BLOC' : 'TOATE');
+  const blocId = opts.bloc_id || currentBlocId || allBlocuriCache[0]?.id || 1;
+  const res = await apiPost('/api/operatiuni/apartamente/batch-egalizare-indexuri', {
+    scope,
+    bloc_id: blocId
+  });
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Indecșii au fost egalizați (Consum = 0) pentru ${res.updated_count ?? 0} apartamente (${scope})!`, 'success');
+  if (currentBlocId) {
+    apartamenteCache = await apiGet(`/api/blocuri/${currentBlocId}/apartamente`);
+    populateIndecsiApartamente();
+    actualizeazaStatsDiferenteApa();
+  }
+  return res;
+};
 
 function actualizeazaStatsDiferenteApa() {
   if (!currentBloc) return;
@@ -1249,11 +1282,17 @@ function populateRepartitoareARA() {
   const tbody = document.getElementById('tbl-repartitoare-ara');
   if (!tbody) return;
 
+  const activePer = perioadeCache.find(p => Number(p.id) === Number(currentPerioadaId)) || {};
+  const tarifEt = Number(currentBloc?.tarif_et || activePer.tarif_et || 0);
+
   tbody.innerHTML = apartamenteCache.map(ap => {
     const rInputs = [1, 2, 3, 4, 5].map(r => `
       <td><input type="number" class="table-input" style="width:58px;" step="0.01" value="${ap[`iv_r${r}`] || 0}" data-f="iv_r${r}" title="Serie R${r}: ${ap[`serie_r${r}`] || '-'} | Coef: ${(ap[`facttr_r${r}`] || 1) * (ap[`coefsp_r${r}`] || 1)}"></td>
       <td><input type="number" class="table-input" style="width:58px;" step="0.01" value="${ap[`in_r${r}`] || 0}" data-f="in_r${r}" title="Index Nou R${r}"></td>
     `).join('');
+
+    const gcalRed = Number(ap.gcal_red || 0);
+    const gcalRedLei = tarifEt > 0 && gcalRed > 0 ? Math.round(gcalRed * tarifEt * 100) / 100 : 0;
 
     return `
       <tr data-ap-id="${ap.id}">
@@ -1268,6 +1307,9 @@ function populateRepartitoareARA() {
           </select>
         </td>
         ${rInputs}
+        <td>
+          <input type="number" class="table-input" style="width:72px;" step="0.01" value="${gcalRedLei}" data-f="gcal_red_lei" title="ARA.PRG: Valoare reducere în Lei (GCAL_RED = ${gcalRed.toFixed(4)} Gcal)">
+        </td>
         <td style="text-align:right; font-weight:600; color:#1e40af;">${Number(ap.tot_unit || 0).toFixed(2)}</td>
         <td style="text-align:right; font-weight:700; color:#15803d;">${Number(ap.gcal_final || 0).toFixed(4)}</td>
         <td>
@@ -1381,6 +1423,17 @@ async function saveAllProcenteMetrologie() {
   populateRepartitoareTab();
 }
 
+window.onExtGcalRedLeiInput = function() {
+  const leiVal = parseFloat(document.getElementById('ext-gcal-red-lei')?.value);
+  const gcalEl = document.getElementById('ext-gcal-red');
+  if (!gcalEl || isNaN(leiVal)) return;
+  const activePer = perioadeCache.find(p => Number(p.id) === Number(currentPerioadaId)) || {};
+  const tarifEt = Number(currentBloc?.tarif_et || activePer.tarif_et || 0);
+  if (tarifEt > 0) {
+    gcalEl.value = (Math.round((leiVal / tarifEt) * 10000) / 10000).toFixed(4);
+  }
+};
+
 function openApartamentExtinsModal(apId) {
   const ap = apartamenteCache.find(a => Number(a.id) === Number(apId));
   if (!ap) return;
@@ -1409,6 +1462,14 @@ function openApartamentExtinsModal(apId) {
       `;
     }).join('');
   }
+
+  const activePer = perioadeCache.find(p => Number(p.id) === Number(currentPerioadaId)) || {};
+  const tarifEt = Number(currentBloc?.tarif_et || activePer.tarif_et || 0);
+  const gcalRed = Number(ap.gcal_red || 0);
+  const gcalRedEl = document.getElementById('ext-gcal-red');
+  const gcalRedLeiEl = document.getElementById('ext-gcal-red-lei');
+  if (gcalRedEl) gcalRedEl.value = gcalRed;
+  if (gcalRedLeiEl) gcalRedLeiEl.value = (tarifEt > 0 && gcalRed > 0) ? (Math.round(gcalRed * tarifEt * 100) / 100) : '';
 
   document.getElementById('ext-ser-ar-bu').value = ap.ser_ar_bu || '';
   document.getElementById('ext-dv-ar-bu').value = (ap.d_v_ar_bu || '').slice(0, 10);
@@ -1464,8 +1525,14 @@ async function saveModalApartamentExtins() {
     ch_box: parseFloat(document.getElementById('ext-ch-box').value) || 0,
     ch_hav: parseFloat(document.getElementById('ext-ch-hav').value) || 0,
     altele: parseFloat(document.getElementById('ext-altele').value) || 0,
-    i: parseFloat(document.getElementById('ext-i-ajust').value) || 0
+    i: parseFloat(document.getElementById('ext-i-ajust').value) || 0,
+    gcal_red: parseFloat(document.getElementById('ext-gcal-red')?.value) || 0
   };
+
+  const gcalRedLeiRaw = document.getElementById('ext-gcal-red-lei')?.value;
+  if (gcalRedLeiRaw !== undefined && String(gcalRedLeiRaw).trim() !== '') {
+    payload.gcal_red_lei = parseFloat(gcalRedLeiRaw) || 0;
+  }
 
   for (let r = 1; r <= 7; r++) {
     payload[`serie_r${r}`] = document.getElementById(`ext-serie-r${r}`).value.trim();
@@ -1546,8 +1613,89 @@ async function runCalculSUM() {
 }
 
 // ============================================================
-//  APARTAMENTE
+//  APARTAMENTE & OPERAȚIUNI ÎN MASĂ (APS.PRG F4=INLO / F5=CMFR, ADB.PRG F5=ACEL)
 // ============================================================
+window.batchInlocuireApartamente = async function(opts = {}) {
+  const scope = opts.scope || document.getElementById('inlo-scope')?.value || (currentBlocId ? 'BLOC' : 'TOATE');
+  const getOptNum = (val, elId) => {
+    if (val !== undefined && val !== null && val !== '') return parseFloat(val);
+    const raw = document.getElementById(elId)?.value;
+    if (raw !== undefined && raw !== null && String(raw).trim() !== '') return parseFloat(raw);
+    return undefined;
+  };
+  const payload = {
+    scope,
+    bloc_id: opts.bloc_id || currentBlocId || allBlocuriCache[0]?.id || 1,
+    repar_crt: getOptNum(opts.repar_crt, 'inlo-repar-crt'),
+    altele: getOptNum(opts.altele, 'inlo-altele'),
+    i: getOptNum(opts.i, 'inlo-i'),
+    fond_repar: getOptNum(opts.fond_repar, 'inlo-fond-repar')
+  };
+  if (payload.repar_crt === undefined && payload.altele === undefined && payload.i === undefined && payload.fond_repar === undefined) {
+    payload.repar_crt = 0;
+  }
+  const res = await apiPost('/api/operatiuni/apartamente/batch-inlocuire', payload);
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Înlocuire în masă (APS.PRG F4=INLO) aplicată pe ${res.updated_count ?? 0} apartamente!`, 'success');
+  if (currentBlocId) {
+    apartamenteCache = await apiGet(`/api/blocuri/${currentBlocId}/apartamente`);
+    populateApartamente();
+    populateRepartitoareTab();
+  }
+  return res;
+};
+
+window.batchMaxFrApartamente = async function(opts = {}) {
+  const activePer = perioadeCache.find(p => Number(p.id) === Number(currentPerioadaId)) || { an: 2026, luna: 9 };
+  const scope = opts.scope || document.getElementById('inlo-scope')?.value || 'BLOC';
+  const refLuna = parseInt(opts.ref_luna ?? document.getElementById('cmfr-ref-luna')?.value, 10) || activePer.luna || 9;
+  const refAn = parseInt(opts.ref_an ?? document.getElementById('cmfr-ref-an')?.value, 10) || activePer.an || 2026;
+  const payload = {
+    ref_an: refAn,
+    ref_luna: refLuna,
+    bloc_id: scope === 'BLOC' ? (opts.bloc_id || currentBlocId || undefined) : undefined,
+    use_current: true
+  };
+  const res = await apiPost('/api/operatiuni/apartamente/batch-max-fr', payload);
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Maxim Fond Rulment (APS.PRG F5=CMFR) actualizat pe ${res.updated_count ?? 0} apartamente din luna ${refLuna}/${refAn}!`, 'success');
+  if (currentBlocId) {
+    apartamenteCache = await apiGet(`/api/blocuri/${currentBlocId}/apartamente`);
+    populateApartamente();
+    populateRepartitoareTab();
+  }
+  return res;
+};
+
+window.batchTermicBlocuri = async function(opts = {}) {
+  const ecartEl = document.getElementById('set-ecart-temp');
+  const randEl = document.getElementById('set-rand-tr');
+  const onlyHwEl = document.getElementById('acel-only-hw');
+  const ecartTemp = opts.ecart_temp !== undefined
+    ? parseFloat(opts.ecart_temp)
+    : (ecartEl && ecartEl.value !== '' ? parseFloat(ecartEl.value) : (currentBloc?.ecart_temp ?? 50));
+  const randTr = opts.rand_tr !== undefined
+    ? parseFloat(opts.rand_tr)
+    : (randEl && randEl.value !== '' ? parseFloat(randEl.value) : (currentBloc?.rand_tr ?? 95));
+  const onlyWithHotWater = opts.only_with_hot_water !== undefined
+    ? Boolean(opts.only_with_hot_water)
+    : (onlyHwEl ? Boolean(onlyHwEl.checked) : true);
+
+  const res = await apiPost('/api/operatiuni/blocuri/batch-termic', {
+    ecart_temp: ecartTemp,
+    rand_tr: randTr,
+    only_with_hot_water: onlyWithHotWater
+  });
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Parametrii termici (ADB.PRG F5=ACEL: Ecart=${ecartTemp}°C, Randament=${randTr}%) au fost aplicați pe ${res.updated_count ?? 0} blocuri!`, 'success');
+  if (currentBlocId) {
+    currentBloc = await apiGet(`/api/blocuri/${currentBlocId}`);
+    populateSetariBloc();
+  }
+  await loadBlocuri();
+  return res;
+};
+
 function populateApartamente() {
   const tbody = document.getElementById('tbl-apartamente');
   if (!tbody) return;
@@ -2198,32 +2346,9 @@ async function reloadCurrentReport() {
   if (targetDateVal) params.set('data_calcul', targetDateVal);
   params.set('showNames', showNames);
 
-  // Custom interactive parameters (ADU, LSC, COM)
-  if (currentReportCode === 'ADU') {
-    const ceconv = document.getElementById('adu-ceconv')?.value;
-    const cand = document.getElementById('adu-cand')?.value;
-    const unde = document.getElementById('adu-unde')?.value;
-    const ord1 = document.getElementById('adu-ord1')?.value;
-    const ord2 = document.getElementById('adu-ord2')?.value;
-    const ord3 = document.getElementById('adu-ord3')?.value;
-    const ord4 = document.getElementById('adu-ord4')?.value;
-    const ord5 = document.getElementById('adu-ord5')?.value;
-    if (ceconv) params.set('ceconv', ceconv);
-    if (cand) params.set('cand', cand);
-    if (unde) params.set('unde', unde);
-    if (ord1) params.set('ord1', ord1);
-    if (ord2) params.set('ord2', ord2);
-    if (ord3) params.set('ord3', ord3);
-    if (ord4) params.set('ord4', ord4);
-    if (ord5) params.set('ord5', ord5);
-  } else if (currentReportCode === 'LSC') {
-    const datas = document.getElementById('lsc-datas')?.value;
-    if (datas) params.set('datas', datas);
-  } else if (currentReportCode === 'COM') {
-    const refAn = document.getElementById('com-ref-an')?.value;
-    const refLuna = document.getElementById('com-ref-luna')?.value;
-    if (refAn) params.set('ref_an', refAn);
-    if (refLuna) params.set('ref_luna', refLuna);
+  // Collect custom interactive parameters for all 14 parameterized FoxPro reports
+  if (typeof collectCustomReportParams === 'function') {
+    collectCustomReportParams(currentReportCode, params, false);
   }
 
   const report = await apiGet(`/api/rapoarte/${currentReportCode}?${params.toString()}`);
@@ -2336,6 +2461,9 @@ async function exportCurrentReportCSV() {
     params.set('an', activePer.an);
     params.set('luna', activePer.luna);
   }
+  if (typeof collectCustomReportParams === 'function') {
+    collectCustomReportParams(currentReportCode, params, true);
+  }
 
   function downloadFromMemory() {
     if (currentReportData && currentReportData.columns) {
@@ -2426,7 +2554,10 @@ async function onCasierieApartChange() {
     return;
   }
 
-  const ledger = await apiGet(`/api/chitante/ledger/apartament/${apId}`);
+  const [ledger, fonduriSumar] = await Promise.all([
+    apiGet(`/api/chitante/ledger/apartament/${apId}`),
+    apiGet(`/api/chitante/fonduri-sumar/${apId}`)
+  ]);
   if (!ledger || ledger.error) return;
   currentCasierieLedger = ledger;
 
@@ -2446,6 +2577,22 @@ async function onCasierieApartChange() {
   setTxt('cas-debt-fond-rul', formatMoney(totals.A) + ' RON');
   setTxt('cas-debt-penalizari', formatMoney(totals.P) + ' RON');
   setTxt('cas-debt-total', formatMoney(totals.totalRestanta) + ' RON');
+
+  // Populate CHI.PRG CTRL+F9 (Fond Rulment), CTRL+F4 (Fond Reparatii), CTRL+F5 (Penalitati) summary bar
+  if (fonduriSumar && !fonduriSumar.error) {
+    const fr = fonduriSumar.fond_rulment || {};
+    const fa = fonduriSumar.fond_reparatii || {};
+    const pen = fonduriSumar.penalitati || {};
+    setTxt('sumar-fr-calc', formatMoney(fr.total_calculat || 0));
+    setTxt('sumar-fr-achit', formatMoney(fr.total_achitat || 0));
+    setTxt('sumar-fr-ramas', formatMoney(fr.sold_neachitat ?? totals.F ?? 0));
+    setTxt('sumar-fa-calc', formatMoney(fa.total_calculat || 0));
+    setTxt('sumar-fa-achit', formatMoney(fa.total_achitat || 0));
+    setTxt('sumar-fa-ramas', formatMoney(fa.sold_neachitat ?? totals.A ?? 0));
+    setTxt('sumar-pen-calc', formatMoney(pen.total_calculat || 0));
+    setTxt('sumar-pen-achit', formatMoney(pen.total_achitat || 0));
+    setTxt('sumar-pen-ramas', formatMoney(pen.sold_neachitat ?? totals.P ?? 0));
+  }
 
   // Penalty preview box
   const penPreview = ledger.penalties_preview || ledger.penaltiesPreview || {};
@@ -2480,19 +2627,19 @@ function renderCasierieLedgerRows() {
   const rows = currentCasierieLedger.rows || [];
 
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#15803d; padding:0.75rem;">✅ Apartamentul nu are debite restante în registrul DATORII.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#15803d; padding:0.75rem;">✅ Apartamentul nu are debite restante în registrul DATORII.</td></tr>`;
     return;
   }
 
   const catLabels = {
     'R': '<span class="badge badge-info">R • Întreținere</span>',
-    'F': '<span class="badge badge-warning">F • Fond Rep.</span>',
-    'A': '<span class="badge badge-secondary">A • Fond Rulm.</span>',
+    'F': '<span class="badge badge-warning">F • Fond Rulm.</span>',
+    'A': '<span class="badge badge-secondary">A • Fond Rep.</span>',
     'P': '<span class="badge badge-danger">P • Penalizări</span>'
   };
 
   tbody.innerHTML = rows.map(r => `
-    <tr>
+    <tr data-datorie-row-id="${r.id}">
       <td><strong>${r.luna_text || NUME_LUNI_RO[r.luna] || r.luna} ${r.an}</strong></td>
       <td>${catLabels[r.categorie] || r.categorie}</td>
       <td style="text-align:right;">${formatMoney(r.valoare)}</td>
@@ -2504,9 +2651,84 @@ function renderCasierieLedgerRows() {
           placeholder="${r.restanta.toFixed(2)}" ${isManual ? '' : 'disabled'}
           oninput="recalcManualCasierieTotal()">
       </td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-small btn-warning" style="padding:0.15rem 0.35rem; font-size:0.74rem;" onclick="window.punnrDebtRow(${r.id})" title="CHI.PRG F1=PUNNR: Pune numărul chitanței și marchează rândul ca achitat">⚡ F1</button>
+        <button class="btn btn-small btn-secondary" style="padding:0.15rem 0.35rem; font-size:0.74rem;" onclick="window.editDebtRow(${r.id})" title="Editează rândul de datorie (VAL, VAL_ACHIT, Categ.)">✏️</button>
+        <button class="btn btn-small btn-danger" style="padding:0.15rem 0.35rem; font-size:0.74rem;" onclick="window.deleteDebtRow(${r.id})" title="CHI.PRG F5=STERG: Șterge rândul de datorie">🗑️ F5</button>
+      </td>
     </tr>
   `).join('');
 }
+
+// CHI.PRG F1=PUNNR — Marchează rândul de datorie ca achitat integral cu numărul chitanței
+window.punnrDebtRow = async function(datorieId, opts = {}) {
+  if (!datorieId) return;
+  const dataAchit = opts.data_achitat || document.getElementById('cas-data')?.value || new Date().toISOString().slice(0, 10);
+  const res = await apiPost(`/api/chitante/datorii/${datorieId}/punnr`, {
+    numar_chitanta: opts.numar_chitanta,
+    data_achitat: dataAchit,
+    increment_counter: opts.increment_counter !== undefined ? opts.increment_counter : false
+  });
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Rândul de datorie #${datorieId} a fost marcat achitat (F1=PUNNR, Chit. #${res.numar_chitanta || ''})!`, 'success');
+  await onCasierieApartChange();
+  return res;
+};
+
+// CHI.PRG Editare rând în tabelul datorii
+window.editDebtRow = async function(datorieId, directUpdates = null) {
+  if (!datorieId) return;
+  if (directUpdates && typeof directUpdates === 'object') {
+    const res = await apiPut(`/api/chitante/datorii/${datorieId}`, directUpdates);
+    if (res.error) return showAlert(res.error, 'danger');
+    showAlert(`Rândul de datorie #${datorieId} a fost actualizat!`, 'success');
+    await onCasierieApartChange();
+    return res;
+  }
+  const rows = currentCasierieLedger?.rows || [];
+  const row = rows.find(r => Number(r.id) === Number(datorieId));
+  if (!row) return;
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+  setVal('edit-debt-id', row.id);
+  setVal('edit-debt-categorie', row.categorie || 'R');
+  setVal('edit-debt-nr-chit', row.numar_chitanta || 0);
+  setVal('edit-debt-valoare', row.valoare ?? 0);
+  setVal('edit-debt-achitat', row.achitat ?? 0);
+  setVal('edit-debt-data-afis', (row.data_afisare || '').slice(0, 10));
+  setVal('edit-debt-data-achit', (row.data_achitat || '').slice(0, 10));
+  setVal('edit-debt-lucrare', row.lucrare || '');
+  showModal('modal-edit-datorie');
+};
+
+window.saveEditDebtRow = async function() {
+  const id = document.getElementById('edit-debt-id')?.value;
+  if (!id) return;
+  const payload = {
+    categorie: document.getElementById('edit-debt-categorie')?.value || 'R',
+    numar_chitanta: parseInt(document.getElementById('edit-debt-nr-chit')?.value, 10) || 0,
+    valoare: parseFloat(document.getElementById('edit-debt-valoare')?.value) || 0,
+    achitat: parseFloat(document.getElementById('edit-debt-achitat')?.value) || 0,
+    data_afisare: document.getElementById('edit-debt-data-afis')?.value || undefined,
+    data_achitat: document.getElementById('edit-debt-data-achit')?.value || undefined,
+    lucrare: document.getElementById('edit-debt-lucrare')?.value.trim() || ''
+  };
+  const res = await apiPut(`/api/chitante/datorii/${id}`, payload);
+  if (res.error) return showAlert(res.error, 'danger');
+  closeModal('modal-edit-datorie');
+  showAlert(`Rândul de datorie #${id} a fost actualizat!`, 'success');
+  await onCasierieApartChange();
+  return res;
+};
+
+// CHI.PRG F5=STERG — Șterge un rând din tabelul datorii
+window.deleteDebtRow = async function(datorieId) {
+  if (!datorieId) return;
+  const res = await apiDelete(`/api/chitante/datorii/${datorieId}`);
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Rândul de datorie #${datorieId} a fost șters (F5=STERG)!`, 'info');
+  await onCasierieApartChange();
+  return res;
+};
 
 function onChangeModAlocareCasierie() {
   const rawMode = (document.querySelector('input[name="cas-mod-alocare"]:checked')?.value || 'lump').toLowerCase();
@@ -2621,6 +2843,7 @@ async function emiteChitantaColectivaCHO() {
   const categorie = document.getElementById('cho-categorie')?.value || 'F';
   const suma = parseFloat(document.getElementById('cho-suma')?.value);
   const modDist = document.getElementById('cho-mod')?.value || document.getElementById('cho-mod-distribuire')?.value || 'PER_APARTAMENT';
+  const modNumar = document.getElementById('cho-mod-numar')?.value || 'INCREMENTAL';
   const sursa = document.getElementById('cho-sursa')?.value || 'CASA';
   const doc = document.getElementById('cho-document')?.value.trim() || '';
   const expl = document.getElementById('cho-lucrare')?.value.trim() || document.getElementById('cho-explicatie')?.value.trim() || 'Operațiune colectivă CHO';
@@ -2633,7 +2856,9 @@ async function emiteChitantaColectivaCHO() {
     bloc_id: blocId,
     categorie,
     suma,
+    mod_valoare: modDist,
     mod_distribuire: modDist,
+    mod_numar: modNumar,
     sursa,
     document: doc,
     explicatie: expl,
@@ -2643,7 +2868,7 @@ async function emiteChitantaColectivaCHO() {
   if (res.error) return showAlert(res.error, 'danger');
 
   closeModal('modal-chitanta-colectiva');
-  showAlert(`Operațiunea colectivă (CHO) de ${formatMoney(suma)} RON pe categoria ${categorie} a fost înregistrată!`, 'success');
+  showAlert(`Operațiunea colectivă (CHO) de ${formatMoney(suma)} RON pe categoria ${categorie} (${modDist}, ${modNumar}) a fost înregistrată!`, 'success');
   loadChitante();
   if (document.getElementById('cas-apart-select')?.value) {
     onCasierieApartChange();
@@ -2818,6 +3043,19 @@ async function addActCasa() {
 }
 const addCasaEntry = addActCasa;
 
+// ACA.PRG F6=PRINZ — Preia Încasările Zilei din Datorii în Registrul de Casă
+window.preiaIncasarileZilei = async function(opts = {}) {
+  const dataZi = opts.data || document.getElementById('casa-data')?.value || new Date().toISOString().slice(0, 10);
+  const res = await apiPost('/api/operatiuni/casa/preia-incasari-zi', {
+    data: dataZi,
+    overwrite: opts.overwrite !== undefined ? opts.overwrite : true
+  });
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Preluare încasări zi (ACA.PRG F6=PRINZ pe ${dataZi}): ${res.inserted_count ?? 0} chitanțe preluate (${formatMoney(res.total_incasat || 0)} RON)!`, 'success');
+  await loadRegistruCasa();
+  return res;
+};
+
 async function deleteCasaEntry(id) {
   await apiDelete(`/api/operatiuni/casa/${id}`);
   loadRegistruCasa();
@@ -2932,6 +3170,31 @@ async function addActPatrimoniu() {
   loadRegistruPatrimoniu();
 }
 const addPatrimoniuEntry = addActPatrimoniu;
+
+// APA.PRG F5=INITL — Inițializează cele 18 posturi patrimoniale standard (9 Activ + 9 Pasiv)
+window.initLunaPatrimoniu = async function(opts = {}) {
+  const res = await apiPost('/api/operatiuni/patrimoniu/init-luna', {
+    perioada_id: opts.perioada_id || currentPerioadaId,
+    overwrite: opts.overwrite !== undefined ? opts.overwrite : true
+  });
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Situația patrimonială (APA.PRG F5=INITL) a fost inițializată cu ${res.inserted_count ?? 18} posturi (Activ: ${formatMoney(res.total_activ || 0)} | Pasiv: ${formatMoney(res.total_pasiv || 0)} RON)!`, 'success');
+  await loadRegistruPatrimoniu();
+  return res;
+};
+
+// APA.PRG F6=SCHD — Pune aceeași dată pe toate posturile patrimoniale
+window.batchDataPatrimoniu = async function(opts = {}) {
+  const dataVal = opts.data || document.getElementById('patr-data')?.value || new Date().toISOString().slice(0, 10);
+  const res = await apiPost('/api/operatiuni/patrimoniu/batch-data', {
+    data: dataVal,
+    perioada_id: opts.perioada_id || currentPerioadaId
+  });
+  if (res.error) return showAlert(res.error, 'danger');
+  showAlert(`Data ${dataVal} a fost aplicată pe ${res.updated_count ?? 0} înregistrări patrimoniale (APA.PRG F6=SCHD)!`, 'success');
+  await loadRegistruPatrimoniu();
+  return res;
+};
 
 async function deletePatrimoniuEntry(id) {
   await apiDelete(`/api/operatiuni/patrimoniu/${id}`);
@@ -3379,13 +3642,270 @@ function formatTipFactura(tip) {
 
 
 // ============================================================
-//  RAPOARTE: OPTIUNI INTERACTIVE PENTRU ADU, LSC, COM
+//  RAPOARTE: OPTIUNI INTERACTIVE PENTRU CELE 14 RAPOARTE PARAMETRIZATE
+//  (IN1, IN2, CED, LAR_INST, CCA, COM, LSC, LFA, LIP, LIR, LAF, LAR, LVE, ADU)
 // ============================================================
 function renderReportCustomOptions(code) {
   const box = document.getElementById('rapoarte-custom-options');
   if (!box) return;
 
-  if (code === 'ADU') {
+  const activePer = perioadeCache.find(p => Number(p.id) === Number(currentPerioadaId)) || { an: 2026, luna: 9 };
+  const defAn = activePer.an || 2026;
+  const defLuna = activePer.luna || 9;
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const monthOptionsHtml = (selectedMonth) => [
+    [1, '1 - Ianuarie'], [2, '2 - Februarie'], [3, '3 - Martie'], [4, '4 - Aprilie'],
+    [5, '5 - Mai'], [6, '6 - Iunie'], [7, '7 - Iulie'], [8, '8 - August'],
+    [9, '9 - Septembrie'], [10, '10 - Octombrie'], [11, '11 - Noiembrie'], [12, '12 - Decembrie']
+  ].map(([m, label]) => `<option value="${m}" ${Number(selectedMonth) === m ? 'selected' : ''}>${label}</option>`).join('');
+
+  if (code === 'IN1' || code === 'IN2') {
+    box.style.display = 'block';
+    const prefix = code.toLowerCase();
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        🏛️ Parametri Încasări Perioadă (FoxPro: ${code}.PRG — ZINC..ZISF & Categorie)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:155px;">
+          <label class="form-label">Data de început (data_inceput)</label>
+          <input type="date" class="form-input" id="opt-${prefix}-data-inceput" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:155px;">
+          <label class="form-label">Data de sfârșit (data_sfarsit)</label>
+          <input type="date" class="form-input" id="opt-${prefix}-data-sfarsit" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:170px;">
+          <label class="form-label">Categorie (CEE)</label>
+          <select class="form-select" id="opt-${prefix}-categorie" onchange="reloadCurrentReport()">
+            <option value="TOATE">DE TOATE (R + F + A + P)</option>
+            <option value="R">R — REGIE / ÎNTREȚINERE</option>
+            <option value="F">F — FOND RULMENT</option>
+            <option value="A">A — FOND REPARAȚII</option>
+            <option value="P">P — PENALITĂȚI</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează ${code}</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'CED') {
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        🏛️ Parametri Valori în Detaliu pe Apartament (FoxPro: CED.PRG — Interval DI..DS)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:160px;">
+          <label class="form-label">De la Perioada (data_inceput)</label>
+          <input type="month" class="form-input" id="opt-ced-data-inceput" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:160px;">
+          <label class="form-label">Până la Perioada (data_sfarsit)</label>
+          <input type="month" class="form-input" id="opt-ced-data-sfarsit" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează CED</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'LAR_INST') {
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        🏛️ Parametri Liste Plată Instanță (FoxPro: LAR_INST.PRG — DI..DS & Blocuri)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:155px;">
+          <label class="form-label">Data de început (data_inceput)</label>
+          <input type="date" class="form-input" id="opt-lar-inst-data-inceput" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:155px;">
+          <label class="form-label">Data de sfârșit (data_sfarsit)</label>
+          <input type="date" class="form-input" id="opt-lar-inst-data-sfarsit" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">Blocuri (ex: A1,A2 sau gol pt. toate)</label>
+          <input type="text" class="form-input" id="opt-lar-inst-blocuri" placeholder="Toate blocurile" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="flex:1.2;">
+          <label class="form-label">Instituție Destinatară</label>
+          <input type="text" class="form-input" id="opt-lar-inst-institutie" value="JUDECATORIA / PRIMARIA ALBA IULIA" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'CCA') {
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        💵 Parametri Registru de Casă pe Perioadă (FoxPro: CCA.PRG — VDAFI..VDAFS)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:165px;">
+          <label class="form-label">Data de început (data_inceput)</label>
+          <input type="date" class="form-input" id="opt-cca-data-inceput" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:165px;">
+          <label class="form-label">Data de sfârșit (data_sfarsit)</label>
+          <input type="date" class="form-input" id="opt-cca-data-sfarsit" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group">
+          <button class="btn btn-secondary btn-small" onclick="const d1=document.getElementById('opt-cca-data-inceput'); const d2=document.getElementById('opt-cca-data-sfarsit'); if(d1)d1.value=''; if(d2)d2.value=''; reloadCurrentReport();">Toate Zilele</button>
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Filtrează Interval</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'COM') {
+    box.style.display = 'block';
+    const prevM = defLuna > 1 ? defLuna - 1 : 12;
+    const prevY = defLuna > 1 ? defAn : defAn - 1;
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        📊 Parametri Comparație cu Lună de Referință (FoxPro: COM.PRG)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:130px;">
+          <label class="form-label">An Referință (ref_an)</label>
+          <input type="number" class="form-input" id="com-ref-an" value="${prevY}" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:155px;">
+          <label class="form-label">Lună Referință (ref_luna)</label>
+          <select class="form-select" id="com-ref-luna" onchange="reloadCurrentReport()">
+            ${monthOptionsHtml(prevM)}
+          </select>
+        </div>
+        <div class="form-group" style="min-width:190px;">
+          <label class="form-label">Procent Diferență Tolerat % (proc_tolerat)</label>
+          <input type="number" class="form-input" id="com-proc-tolerat" step="0.5" min="0" value="0" title="0 = arată toate apartamentele; >0 = arată doar variațiile peste prag" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Compară Valorile</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'LSC') {
+    box.style.display = 'block';
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + 15);
+    const dateStr = nextDate.toISOString().slice(0, 10);
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        ⚖️ Parametri Scrisori Somație Restanțieri & Borderou Semnături (FoxPro: LSC.PRG / LSA.FRX)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:165px;">
+          <label class="form-label">Până la ce dată încasată (zilim)</label>
+          <input type="date" class="form-input" id="lsc-zilim" value="" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:165px;">
+          <label class="form-label">Data Sistării / Termen (datas)</label>
+          <input type="date" class="form-input" id="lsc-datas" value="${dateStr}" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:190px;">
+          <label class="form-label">Variantă Tipărire (varianta)</label>
+          <select class="form-select" id="lsc-varianta" onchange="reloadCurrentReport()">
+            <option value="LSC">LSC — Scrisori Somație Individuale</option>
+            <option value="LSA">LSA — Tabel Borderou Semnături</option>
+          </select>
+        </div>
+        <div class="form-group" style="min-width:140px;">
+          <label class="form-label">Prag Minim RON</label>
+          <input type="number" class="form-input" id="opt-lsc-prag-minim" step="1" value="0" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'LFA') {
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        📑 Parametri Valori Facturi & Defalcare (FoxPro: LFA.PRG / LFA1.FRX)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:175px;">
+          <label class="form-label">Ordonare (ordonare)</label>
+          <select class="form-select" id="opt-lfa-ordonare" onchange="reloadCurrentReport()">
+            <option value="SERVICIU">1 — După Serviciu (LFA.FRX)</option>
+            <option value="BLOC">2 — După Bloc (LFA1.FRX)</option>
+          </select>
+        </div>
+        <div class="form-group" style="min-width:175px;">
+          <label class="form-label">Energie Termică (CUFET)</label>
+          <select class="form-select" id="opt-lfa-cufet" onchange="reloadCurrentReport()">
+            <option value="1">1 — Cu Energie Termică</option>
+            <option value="2">2 — Fără Energie Termică</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">Notă Subsol 1 (NOTA1)</label>
+          <input type="text" class="form-input" id="opt-lfa-nota1" placeholder="Notă explicativă 1..." onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">Notă Subsol 2 (NOTA2)</label>
+          <input type="text" class="form-input" id="opt-lfa-nota2" placeholder="Notă explicativă 2..." onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează LFA</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'LIP' || code === 'LIR' || code === 'LAF' || code === 'LAR') {
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        📋 Opțiuni Format, Energie Termică & Termen Plată (FoxPro: ${code}.PRG)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:165px;">
+          <label class="form-label">Termen de Plată (term)</label>
+          <input type="text" class="form-input" id="opt-termen-plata" placeholder="ex: 25.${String(defLuna).padStart(2, '0')}.${defAn}" onchange="reloadCurrentReport()">
+        </div>
+        <div class="form-group" style="min-width:190px;">
+          <label class="form-label">Format Tabel (EXTP)</label>
+          <select class="form-select" id="opt-format-lista" onchange="reloadCurrentReport()">
+            <option value="extins">1 — Extins (Toate coloanele)</option>
+            <option value="prescurtat">2 — Prescurtat (Sintetic)</option>
+          </select>
+        </div>
+        <div class="form-group" style="min-width:190px;">
+          <label class="form-label">Energie Termică (CUFET)</label>
+          <select class="form-select" id="opt-cu-energie-termica" onchange="reloadCurrentReport()">
+            <option value="1">1 — Cu Energie Termică</option>
+            <option value="2">2 — Fără Energie Termică (*F.FRX)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Aplică</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'LVE') {
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
+        ⏳ Parametri Verificări Metrologice Apometre (FoxPro: LVE.PRG / LVE1.FRX)
+      </div>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="min-width:260px;">
+          <label class="form-label">Mod Afișare Apometre (CUFEX)</label>
+          <select class="form-select" id="opt-lve-include-valid" onchange="reloadCurrentReport()">
+            <option value="false">1 — Doar Verificări Expirate (LVE.FRX)</option>
+            <option value="true">2 — Toate Apometrele (LVE1.FRX)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează LVE</button>
+        </div>
+      </div>
+    `;
+  } else if (code === 'ADU') {
     box.style.display = 'block';
     box.innerHTML = `
       <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
@@ -3421,60 +3941,101 @@ function renderReportCustomOptions(code) {
         </div>
       </div>
     `;
-  } else if (code === 'LSC') {
-    box.style.display = 'block';
-    const nextDate = new Date();
-    nextDate.setDate(nextDate.getDate() + 15);
-    const dateStr = nextDate.toISOString().slice(0, 10);
-    box.innerHTML = `
-      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
-        ⚖️ Parametri Scrisori Somație Restanțieri (FoxPro: LSC.PRG)
-      </div>
-      <div class="form-row" style="align-items:flex-end;">
-        <div class="form-group" style="min-width:200px;">
-          <label class="form-label">Termen Limită de Plată / Data Sistării (DATAS)</label>
-          <input type="date" class="form-input" id="lsc-datas" value="${dateStr}">
-        </div>
-        <div class="form-group">
-          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează Somațiile</button>
-        </div>
-      </div>
-    `;
-  } else if (code === 'COM') {
-    box.style.display = 'block';
-    box.innerHTML = `
-      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
-        📊 Parametri Comparație cu Lună de Referință (FoxPro: COM.PRG)
-      </div>
-      <div class="form-row" style="align-items:flex-end;">
-        <div class="form-group" style="min-width:140px;">
-          <label class="form-label">An Referință</label>
-          <input type="number" class="form-input" id="com-ref-an" value="2026">
-        </div>
-        <div class="form-group" style="min-width:160px;">
-          <label class="form-label">Lună Referință</label>
-          <select class="form-select" id="com-ref-luna">
-            <option value="1">1 - Ianuarie</option>
-            <option value="2">2 - Februarie</option>
-            <option value="3">3 - Martie</option>
-            <option value="4">4 - Aprilie</option>
-            <option value="5">5 - Mai</option>
-            <option value="6">6 - Iunie</option>
-            <option value="7">7 - Iulie</option>
-            <option value="8" selected>8 - August</option>
-            <option value="9">9 - Septembrie</option>
-            <option value="10">10 - Octombrie</option>
-            <option value="11">11 - Noiembrie</option>
-            <option value="12">12 - Decembrie</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Compară Valorile</button>
-        </div>
-      </div>
-    `;
   } else {
     box.style.display = 'none';
+    box.innerHTML = '';
+  }
+}
+
+function collectCustomReportParams(code, params, isCsv = false) {
+  if (!code || !params) return;
+  const c = String(code).toUpperCase();
+
+  if (c === 'IN1' || c === 'IN2') {
+    const prefix = c.toLowerCase();
+    const di = document.getElementById(`opt-${prefix}-data-inceput`)?.value;
+    const ds = document.getElementById(`opt-${prefix}-data-sfarsit`)?.value;
+    const cat = document.getElementById(`opt-${prefix}-categorie`)?.value;
+    if (di) params.set('data_inceput', di);
+    if (ds) params.set('data_sfarsit', ds);
+    if (cat) params.set('categorie', cat);
+  } else if (c === 'CED') {
+    const di = document.getElementById('opt-ced-data-inceput')?.value;
+    const ds = document.getElementById('opt-ced-data-sfarsit')?.value;
+    if (di) params.set('data_inceput', di);
+    if (ds) params.set('data_sfarsit', ds);
+  } else if (c === 'LAR_INST') {
+    const di = document.getElementById('opt-lar-inst-data-inceput')?.value;
+    const ds = document.getElementById('opt-lar-inst-data-sfarsit')?.value;
+    const bl = document.getElementById('opt-lar-inst-blocuri')?.value;
+    const inst = document.getElementById('opt-lar-inst-institutie')?.value;
+    if (di) params.set('data_inceput', di);
+    if (ds) params.set('data_sfarsit', ds);
+    if (bl) params.set('blocuri', bl);
+    if (inst) params.set('institutie', inst);
+  } else if (c === 'CCA') {
+    const di = document.getElementById('opt-cca-data-inceput')?.value;
+    const ds = document.getElementById('opt-cca-data-sfarsit')?.value;
+    if (di) params.set('data_inceput', di);
+    if (ds) params.set('data_sfarsit', ds);
+  } else if (c === 'COM') {
+    const refAn = document.getElementById('com-ref-an')?.value;
+    const refLuna = document.getElementById('com-ref-luna')?.value;
+    const procTol = document.getElementById('com-proc-tolerat')?.value;
+    if (refAn) params.set('ref_an', refAn);
+    if (refLuna) params.set('ref_luna', refLuna);
+    if (procTol !== undefined && procTol !== '') params.set('proc_tolerat', procTol);
+  } else if (c === 'LSC') {
+    const zilim = document.getElementById('lsc-zilim')?.value;
+    const datas = document.getElementById('lsc-datas')?.value;
+    const varianta = document.getElementById('lsc-varianta')?.value;
+    const prag = document.getElementById('opt-lsc-prag-minim')?.value;
+    if (zilim) params.set('zilim', zilim);
+    if (datas) {
+      params.set('datas', datas);
+      params.set('data_limita', datas);
+    }
+    if (varianta) params.set('varianta', varianta);
+    if (prag !== undefined && prag !== '') params.set('prag_minim', prag);
+  } else if (c === 'LFA') {
+    const ord = document.getElementById('opt-lfa-ordonare')?.value;
+    const cufet = document.getElementById('opt-lfa-cufet')?.value;
+    const n1 = document.getElementById('opt-lfa-nota1')?.value;
+    const n2 = document.getElementById('opt-lfa-nota2')?.value;
+    if (ord) params.set('ordonare', ord);
+    if (cufet) params.set('cu_energie_termica', cufet);
+    if (n1) params.set('nota1', n1);
+    if (n2) params.set('nota2', n2);
+  } else if (c === 'LIP' || c === 'LIR' || c === 'LAF' || c === 'LAR') {
+    const term = document.getElementById('opt-termen-plata')?.value;
+    const fmt = document.getElementById('opt-format-lista')?.value;
+    const cufet = document.getElementById('opt-cu-energie-termica')?.value;
+    if (term) params.set('termen_plata', term);
+    if (fmt) {
+      params.set('format_lista', fmt);
+      if (!isCsv) params.set('format', fmt);
+    }
+    if (cufet) params.set('cu_energie_termica', cufet);
+  } else if (c === 'LVE') {
+    const incVal = document.getElementById('opt-lve-include-valid')?.value;
+    if (incVal !== undefined && incVal !== '') params.set('includeValid', incVal);
+  } else if (c === 'ADU') {
+    const ceconv = document.getElementById('adu-ceconv')?.value;
+    const cand = document.getElementById('adu-cand')?.value;
+    const unde = document.getElementById('adu-unde')?.value;
+    const ord1 = document.getElementById('adu-ord1')?.value;
+    const ord2 = document.getElementById('adu-ord2')?.value;
+    const ord3 = document.getElementById('adu-ord3')?.value;
+    const ord4 = document.getElementById('adu-ord4')?.value;
+    const ord5 = document.getElementById('adu-ord5')?.value;
+    if (ceconv) params.set('ceconv', ceconv);
+    if (cand) params.set('cand', cand);
+    if (unde) params.set('unde', unde);
+    if (ord1) params.set('ord1', ord1);
+    if (ord2) params.set('ord2', ord2);
+    if (ord3) params.set('ord3', ord3);
+    if (ord4) params.set('ord4', ord4);
+    if (ord5) params.set('ord5', ord5);
   }
 }
 

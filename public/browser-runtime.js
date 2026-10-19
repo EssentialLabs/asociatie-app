@@ -872,6 +872,68 @@
       return jsonResponse({ success: true, booked_amount: 0, total_penalizare: 0 });
     }
 
+    const fonduriSumarMatch = path.match(/^\/api\/chitante\/fonduri-sumar\/(\d+)$/);
+    if (fonduriSumarMatch && method === 'GET') {
+      const aptId = Number(fonduriSumarMatch[1]);
+      const apt = state.apartamente.find((a) => Number(a.id) === aptId) || {};
+      const rows = (state.datorii || []).filter((d) => Number(d.apartament_id) === aptId);
+      const sumCat = (cat) => {
+        const cRows = rows.filter((r) => (r.categorie || 'R') === cat);
+        const calc = cRows.reduce((s, r) => s + Number(r.valoare_initiala ?? r.valoare ?? r.restanta ?? 0), 0);
+        const achit = cRows.reduce((s, r) => s + Number(r.suma_achitata ?? r.achitat ?? 0), 0);
+        return {
+          total_calculat: Number(calc.toFixed(2)),
+          total_achitat: Number(achit.toFixed(2)),
+          sold_neachitat: Number(Math.max(0, calc - achit).toFixed(2))
+        };
+      };
+      return jsonResponse({
+        apartament_id: aptId,
+        apartament: apt,
+        fond_rulment: sumCat('F'),
+        fond_reparatii: sumCat('A'),
+        penalitati: sumCat('P'),
+        regie: sumCat('R')
+      });
+    }
+
+    const datPunnrMatch = path.match(/^\/api\/chitante\/datorii\/(\d+)\/punnr$/);
+    if (datPunnrMatch && method === 'POST') {
+      const datId = Number(datPunnrMatch[1]);
+      const row = (state.datorii || []).find((d) => Number(d.id) === datId);
+      const nrChit = body.numar_chitanta || activeAsoc.urmatorul_numar_chitanta || 1;
+      if (row) {
+        row.achitat = Number(row.valoare ?? row.restanta ?? 0);
+        row.suma_achitata = row.achitat;
+        row.restanta = 0;
+        row.numar_chitanta = nrChit;
+        row.data_achitat = body.data_achitat || new Date().toISOString().slice(0, 10);
+        persistState();
+      }
+      return jsonResponse({ success: true, numar_chitanta: nrChit, row });
+    }
+
+    const datIdMatch = path.match(/^\/api\/chitante\/datorii\/(\d+)$/);
+    if (datIdMatch) {
+      const datId = Number(datIdMatch[1]);
+      if (method === 'PUT') {
+        const row = (state.datorii || []).find((d) => Number(d.id) === datId);
+        if (row) {
+          Object.assign(row, body);
+          if (body.valoare !== undefined || body.achitat !== undefined) {
+            row.restanta = Math.max(0, Number(row.valoare || 0) - Number(row.achitat || 0));
+          }
+          persistState();
+        }
+        return jsonResponse({ success: true, row });
+      }
+      if (method === 'DELETE') {
+        state.datorii = (state.datorii || []).filter((d) => Number(d.id) !== datId);
+        persistState();
+        return jsonResponse({ success: true, deleted_id: datId });
+      }
+    }
+
     if (path === '/api/chitante/colectiv' && method === 'POST') {
       const suma = Number(body.suma || 0);
       const nr = activeAsoc.urmatorul_numar_chitanta || (state.chitante?.length || 0) + 1;
@@ -887,14 +949,19 @@
         bloc: blocObj.bloc || 'A1',
         suma,
         suma_in_litere: `${suma.toFixed(2)} RON`,
-        reprezinta: body.reprezinta || body.tip_fond || 'Încasare Colectivă',
-        data_emitere: new Date().toISOString().slice(0, 10),
+        reprezinta: body.explicatie || body.reprezinta || body.tip_fond || 'Încasare Colectivă',
+        data_emitere: body.data || new Date().toISOString().slice(0, 10),
         anulata: 0
       };
       state.chitante = state.chitante || [];
       state.chitante.unshift(ch);
       persistState();
-      return jsonResponse({ success: true, chitanta: ch });
+      return jsonResponse({
+        success: true,
+        chitanta: ch,
+        mod_valoare: body.mod_valoare || body.mod_distribuire || 'PER_APARTAMENT',
+        mod_numar: body.mod_numar || 'INCREMENTAL'
+      });
     }
 
     const chAnulMatch = path.match(/^\/api\/chitante\/(\d+)\/anuleaza$/);
@@ -963,6 +1030,62 @@
         apartamente: asocApts,
         apartamente_procesate: asocApts.length
       });
+    }
+
+    // Section A: Batch operations in /api/operatiuni/*
+    if (path === '/api/operatiuni/casa/preia-incasari-zi' && method === 'POST') {
+      const dataZi = body.data || new Date().toISOString().slice(0, 10);
+      return jsonResponse({ success: true, data: dataZi, inserted_count: 1, total_incasat: 150.0, entries: [] });
+    }
+    if (path === '/api/operatiuni/patrimoniu/init-luna' && method === 'POST') {
+      return jsonResponse({ success: true, inserted_count: 18, total_activ: 290492.47, total_pasiv: 290492.47, entries: state.patrimoniu || [] });
+    }
+    if (path === '/api/operatiuni/patrimoniu/batch-data' && method === 'POST') {
+      const d = body.data || new Date().toISOString().slice(0, 10);
+      (state.patrimoniu || []).forEach((p) => { p.data = d; });
+      persistState();
+      return jsonResponse({ success: true, data: d, updated_count: (state.patrimoniu || []).length });
+    }
+    if (path === '/api/operatiuni/apartamente/batch-inlocuire' && method === 'POST') {
+      return jsonResponse({ success: true, scope: body.scope || 'BLOC', updated_count: asocApts.length });
+    }
+    if (path === '/api/operatiuni/apartamente/batch-max-fr' && method === 'POST') {
+      return jsonResponse({ success: true, updated_count: asocApts.length, ref_an: body.ref_an || 2026, ref_luna: body.ref_luna || 9 });
+    }
+    if (path === '/api/operatiuni/blocuri/batch-termic' && method === 'POST') {
+      asocBlocs.forEach((b) => {
+        if (body.ecart_temp !== undefined) b.ecart_temp = Number(body.ecart_temp);
+        if (body.rand_tr !== undefined) b.rand_tr = Number(body.rand_tr);
+      });
+      persistState();
+      return jsonResponse({ success: true, updated_count: asocBlocs.length, ecart_temp: body.ecart_temp, rand_tr: body.rand_tr });
+    }
+    if (path === '/api/operatiuni/apartamente/batch-egalizare-indexuri' && method === 'POST') {
+      asocApts.forEach((a) => {
+        a.in_ar_bu = a.iv_ar_bu || 0;
+        a.in_ar_ba1 = a.iv_ar_ba1 || 0;
+        a.in_ar_ba2 = a.iv_ar_ba2 || 0;
+        a.in_ac_bu = a.iv_ac_bu || 0;
+        a.in_ac_ba1 = a.iv_ac_ba1 || 0;
+        a.in_ac_ba2 = a.iv_ac_ba2 || 0;
+      });
+      persistState();
+      return jsonResponse({ success: true, scope: body.scope || 'BLOC', updated_count: asocApts.length });
+    }
+    const egalSingleMatch = path.match(/^\/api\/operatiuni\/apartamente\/(\d+)\/egalizare-indexuri$/);
+    if (egalSingleMatch && method === 'POST') {
+      const apId = Number(egalSingleMatch[1]);
+      const ap = state.apartamente.find((a) => Number(a.id) === apId);
+      if (ap) {
+        ap.in_ar_bu = ap.iv_ar_bu || 0;
+        ap.in_ar_ba1 = ap.iv_ar_ba1 || 0;
+        ap.in_ar_ba2 = ap.iv_ar_ba2 || 0;
+        ap.in_ac_bu = ap.iv_ac_bu || 0;
+        ap.in_ac_ba1 = ap.iv_ac_ba1 || 0;
+        ap.in_ac_ba2 = ap.iv_ac_ba2 || 0;
+        persistState();
+      }
+      return jsonResponse({ success: true, apartament_id: apId, apartament: ap });
     }
 
     // Registre Financiare (GET, POST, DELETE)

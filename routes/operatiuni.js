@@ -57,10 +57,80 @@ function resolveActivePeriod(db, req, explicitId = null) {
 
 function normalizeBodyKeys(body = {}) {
   const out = {};
-  for (const [k, v] of Object.entries(body)) {
+  for (const [k, v] of Object.entries(body || {})) {
     out[k.toLowerCase()] = v;
   }
   return out;
+}
+
+function hasTableColumn(db, table, col) {
+  try {
+    const cols = db.prepare(`PRAGMA table_info("${table}")`).all();
+    return cols.some(c => c.name.toLowerCase() === col.toLowerCase());
+  } catch (_) {
+    return false;
+  }
+}
+
+function isoToDdMmYyyy(isoStr) {
+  const s = String(isoStr || '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  return s;
+}
+
+function parseDateFormats(rawDate) {
+  const s = String(rawDate || new Date().toISOString().slice(0, 10)).trim();
+  const mRo = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (mRo) {
+    return {
+      isoDate: `${mRo[3]}-${mRo[2]}-${mRo[1]}`,
+      ddMmYyyy: s
+    };
+  }
+  const mIso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (mIso) {
+    return {
+      isoDate: `${mIso[1]}-${mIso[2]}-${mIso[3]}`,
+      ddMmYyyy: `${mIso[3]}.${mIso[2]}.${mIso[1]}`
+    };
+  }
+  const fallbackIso = new Date().toISOString().slice(0, 10);
+  return {
+    isoDate: fallbackIso,
+    ddMmYyyy: isoToDdMmYyyy(fallbackIso)
+  };
+}
+
+function computeApartmentMaxFr(r = {}) {
+  return round2(
+    Number(r.apa_rece || 0) +
+    Number(r.can_mnj || 0) +
+    Number(r.can_met || 0) +
+    Number(r.apa_calda || 0) +
+    Number(r.incalzire || 0) +
+    Number(r.gaz || 0) +
+    Number(r.gunoi || 0) +
+    Number(r.curent || 0) +
+    Number(r.ascensor || 0) +
+    Number(r.sal_feme || 0) +
+    Number(r.sal_tesa || 0) +
+    Number(r.chelt_inc || 0) +
+    Number(r.ch_admin || 0) +
+    Number(r.ch_sediu || 0) +
+    Number(r.prest_serv || 0) +
+    Number(r.difarar || 0) +
+    Number(r.altele || 0) +
+    Number(r.difarac || 0) +
+    Number(r.difcanar || 0) +
+    Number(r.difcanac || 0) +
+    Number(r.difetac || 0) +
+    Number(r.difetin || 0) +
+    Number(r.abonament || 0) +
+    Number(r.ch_box || 0) +
+    Number(r.ch_hav || 0) +
+    Number(r.i || 0)
+  );
 }
 
 // ============================================================
@@ -317,6 +387,61 @@ router.put('/asociatie/facturi', (req, res) => {
 // ============================================================
 //  4. ACTUALIZARE DATE BLOCURI & ADRESE (ADB.PRG & ADR.PRG)
 // ============================================================
+router.post('/blocuri/batch-termic', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const b = normalizeBodyKeys({ ...(req.query || {}), ...(req.body || {}) });
+    const asoc = resolveAsociatie(db, req);
+
+    const updates = [];
+    const values = [];
+    if (b.ecart_temp !== undefined && b.ecart_temp !== null && b.ecart_temp !== '') {
+      updates.push('ecart_temp = ?');
+      values.push(Number(b.ecart_temp));
+    }
+    if (b.rand_tr !== undefined && b.rand_tr !== null && b.rand_tr !== '') {
+      updates.push('rand_tr = ?');
+      values.push(Number(b.rand_tr));
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Specificați ecart_temp și/sau rand_tr pentru actualizare în masă.' });
+    }
+
+    const onlyHotWater =
+      b.only_with_hot_water === false || b.only_with_hot_water === 'false' || b.only_with_hot_water === 0
+        ? false
+        : true;
+
+    let sql = `UPDATE blocuri SET ${updates.join(', ')} WHERE (asociatie_id = ? OR (? = 1 AND asociatie_id IS NULL))`;
+    values.push(asoc.id, asoc.id);
+
+    if (onlyHotWater) {
+      sql += ' AND COALESCE(proc_av_ac, 0) != 0';
+    }
+
+    const info = db.prepare(sql).run(...values);
+
+    logAudit(db, {
+      user_id: req.user?.id,
+      username: req.user?.username,
+      actiune: 'ADB_BATCH_TERMIC',
+      entitate: 'blocuri',
+      entitate_id: asoc.id,
+      detalii: { ecart_temp: b.ecart_temp, rand_tr: b.rand_tr, only_with_hot_water: onlyHotWater, updatedCount: info.changes },
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      updatedCount: info.changes,
+      only_with_hot_water: onlyHotWater
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.get('/blocuri/:id/extins', (req, res) => {
   try {
     const db = resolveDb(req);
@@ -442,6 +567,284 @@ router.put('/blocuri/:id/extins', (req, res) => {
 // ============================================================
 //  5. ACTUALIZARE EXTINSĂ APARTAMENTE (APS, AIA, ARA, ADC)
 // ============================================================
+router.post('/apartamente/batch-inlocuire', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const b = normalizeBodyKeys({ ...(req.query || {}), ...(req.body || {}) });
+    const asoc = resolveAsociatie(db, req);
+
+    if (b.fond_repar !== undefined && b.fond_reparatii === undefined) b.fond_reparatii = b.fond_repar;
+    if (b.fond_reparatii !== undefined && b.fond_repar === undefined) b.fond_repar = b.fond_reparatii;
+
+    const enabledMap = b.enabled && typeof b.enabled === 'object' ? normalizeBodyKeys(b.enabled) : null;
+    const candidateCols = ['repar_crt', 'altele', 'i', 'fond_repar', 'fond_reparatii', 'ch_box', 'ch_hav'];
+
+    const updates = [];
+    const values = [];
+    for (const col of candidateCols) {
+      if (b[col] !== undefined && b[col] !== null && b[col] !== '') {
+        if (enabledMap && enabledMap[col] === false) continue;
+        if ((col === 'fond_repar' || col === 'fond_reparatii') && enabledMap) {
+          if (enabledMap.fond_repar === false || enabledMap.fond_reparatii === false) continue;
+        }
+        updates.push(`${col} = ?`);
+        values.push(Number(b[col]));
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Niciun câmp selectat pentru înlocuire (repar_crt, altele, i, fond_repar).' });
+    }
+
+    const scope = String(b.scope || (b.bloc_id || b.bloc ? 'BLOC' : 'TOATE')).toUpperCase();
+    let sql = `UPDATE apartamente SET ${updates.join(', ')}`;
+
+    if (scope === 'TOATE' || scope === 'ALL' || scope === 'ASOCIATIE') {
+      sql += ' WHERE bloc_id IN (SELECT id FROM blocuri WHERE asociatie_id = ? OR (? = 1 AND asociatie_id IS NULL))';
+      values.push(asoc.id, asoc.id);
+    } else {
+      const blocParam = b.bloc_id ?? b.bloc;
+      const blocRow =
+        db.prepare('SELECT * FROM blocuri WHERE id = ?').get(blocParam) ||
+        db.prepare('SELECT * FROM blocuri WHERE bloc = ?').get(String(blocParam || '').trim());
+      if (!blocRow) {
+        return res.status(404).json({ error: 'Blocul selectat pentru înlocuire în masă nu a fost găsit.' });
+      }
+      sql += ' WHERE bloc_id = ?';
+      values.push(blocRow.id);
+    }
+
+    const info = db.prepare(sql).run(...values);
+
+    logAudit(db, {
+      user_id: req.user?.id,
+      username: req.user?.username,
+      actiune: 'APS_BATCH_INLOCUIRE',
+      entitate: 'apartamente',
+      entitate_id: asoc.id,
+      detalii: { scope, bloc_id: b.bloc_id, updatedCount: info.changes },
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      updatedCount: info.changes,
+      scope: scope === 'TOATE' ? 'TOATE' : 'BLOC'
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/apartamente/batch-max-fr', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const b = normalizeBodyKeys({ ...(req.query || {}), ...(req.body || {}) });
+    const asoc = resolveAsociatie(db, req);
+
+    const refAn = Number(b.ref_an || b.an || 0);
+    const refLuna = Number(b.ref_luna || b.luna || 0);
+    if (!refAn || !refLuna) {
+      return res.status(400).json({ error: 'Parametrii ref_an și ref_luna sunt obligatorii.' });
+    }
+
+    let targetBloc = null;
+    const blocParam = b.bloc_id ?? b.bloc;
+    if (blocParam !== undefined && blocParam !== null && blocParam !== '' && String(blocParam).toUpperCase() !== 'TOATE') {
+      targetBloc =
+        db.prepare('SELECT * FROM blocuri WHERE id = ?').get(blocParam) ||
+        db.prepare('SELECT * FROM blocuri WHERE bloc = ?').get(String(blocParam).trim());
+      if (!targetBloc) {
+        return res.status(404).json({ error: 'Blocul specificat nu a fost găsit.' });
+      }
+    }
+
+    // 1. Look up snapshot rows in apartamente_luna for (ref_an, ref_luna)
+    let snapRows = targetBloc
+      ? db
+          .prepare('SELECT * FROM apartamente_luna WHERE an = ? AND luna = ? AND (bloc_id = ? OR bloc = ?)')
+          .all(refAn, refLuna, targetBloc.id, targetBloc.bloc)
+      : db
+          .prepare(`
+            SELECT al.*
+            FROM apartamente_luna al
+            LEFT JOIN blocuri bl ON bl.id = al.bloc_id
+            WHERE al.an = ? AND al.luna = ?
+              AND (bl.asociatie_id = ? OR (? = 1 AND (bl.asociatie_id IS NULL OR al.bloc_id IS NULL)))
+          `)
+          .all(refAn, refLuna, asoc.id, asoc.id);
+
+    // 2. If no snapshot rows exist, check if (refAn, refLuna) matches the current open period AND use_current is explicitly requested or allowed
+    const openPeriod = db
+      .prepare("SELECT * FROM perioade WHERE an = ? AND luna = ? AND status = 'DESCHISA' AND (asociatie_id = ? OR ? = 1)")
+      .get(refAn, refLuna, asoc.id, asoc.id);
+
+    if (snapRows.length === 0) {
+      if (openPeriod && b.use_current !== false && b.use_current !== 'false') {
+        snapRows = targetBloc
+          ? db
+              .prepare(`
+                SELECT a.*, a.id AS apartament_id, bl.bloc
+                FROM apartamente a
+                JOIN blocuri bl ON bl.id = a.bloc_id
+                WHERE a.bloc_id = ?
+              `)
+              .all(targetBloc.id)
+          : db
+              .prepare(`
+                SELECT a.*, a.id AS apartament_id, bl.bloc
+                FROM apartamente a
+                JOIN blocuri bl ON bl.id = a.bloc_id
+                WHERE bl.asociatie_id = ? OR (? = 1 AND bl.asociatie_id IS NULL)
+              `)
+              .all(asoc.id, asoc.id);
+      } else {
+        return res.status(404).json({
+          error: `Nu există date salvate (apartamente_luna) pentru perioada de referință ${refLuna}/${refAn}.`
+        });
+      }
+    }
+
+    const targetApartments = targetBloc
+      ? db
+          .prepare(`
+            SELECT a.*, bl.bloc
+            FROM apartamente a
+            JOIN blocuri bl ON bl.id = a.bloc_id
+            WHERE a.bloc_id = ?
+            ORDER BY CAST(a.numar_apart AS INTEGER), a.numar_apart
+          `)
+          .all(targetBloc.id)
+      : db
+          .prepare(`
+            SELECT a.*, bl.bloc
+            FROM apartamente a
+            JOIN blocuri bl ON bl.id = a.bloc_id
+            WHERE bl.asociatie_id = ? OR (? = 1 AND bl.asociatie_id IS NULL)
+            ORDER BY a.bloc_id, CAST(a.numar_apart AS INTEGER), a.numar_apart
+          `)
+          .all(asoc.id, asoc.id);
+
+    let updatedCount = 0;
+    const missingApartments = [];
+
+    const updStmt = db.prepare('UPDATE apartamente SET max_fr = ?, max_fond_rulment = ? WHERE id = ?');
+
+    const tx = db.transaction(() => {
+      for (const apt of targetApartments) {
+        const snap = snapRows.find(
+          s =>
+            (s.apartament_id && Number(s.apartament_id) === Number(apt.id)) ||
+            (s.bloc_id && Number(s.bloc_id) === Number(apt.bloc_id) && String(s.numar_apart).trim() === String(apt.numar_apart).trim()) ||
+            (String(s.bloc || '').trim() === String(apt.bloc || '').trim() && String(s.numar_apart).trim() === String(apt.numar_apart).trim())
+        );
+
+        if (snap) {
+          const AA = computeApartmentMaxFr(snap);
+          updStmt.run(AA, AA, apt.id);
+          updatedCount++;
+        } else {
+          missingApartments.push({
+            id: apt.id,
+            bloc_id: apt.bloc_id,
+            bloc: apt.bloc,
+            numar_apart: apt.numar_apart
+          });
+        }
+      }
+    });
+
+    tx();
+
+    logAudit(db, {
+      user_id: req.user?.id,
+      username: req.user?.username,
+      actiune: 'APS_BATCH_MAX_FR',
+      entitate: 'apartamente',
+      entitate_id: targetBloc?.id || asoc.id,
+      detalii: { ref_an: refAn, ref_luna: refLuna, bloc_id: targetBloc?.id || null, updatedCount, missingCount: missingApartments.length },
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      ref_an: refAn,
+      ref_luna: refLuna,
+      updatedCount,
+      missingApartments
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+const EGALIZARE_INDEXURI_SQL = `
+  UPDATE apartamente SET
+    in_ar_bu = CASE WHEN COALESCE(iv_ar_bu, 0) != 0 THEN iv_ar_bu ELSE 0 END,
+    in_ar_ba1 = CASE WHEN COALESCE(iv_ar_ba1, 0) != 0 THEN iv_ar_ba1 ELSE 0 END,
+    in_ar_ba2 = CASE WHEN COALESCE(iv_ar_ba2, 0) != 0 THEN iv_ar_ba2 ELSE 0 END,
+    in_ac_bu = CASE WHEN COALESCE(iv_ac_bu, 0) != 0 THEN iv_ac_bu ELSE 0 END,
+    in_ac_ba1 = CASE WHEN COALESCE(iv_ac_ba1, 0) != 0 THEN iv_ac_ba1 ELSE 0 END,
+    in_ac_ba2 = CASE WHEN COALESCE(iv_ac_ba2, 0) != 0 THEN iv_ac_ba2 ELSE 0 END,
+    inin = CASE WHEN COALESCE(ivin, iv_incalzire, 0) != 0 THEN COALESCE(ivin, iv_incalzire, 0) ELSE 0 END,
+    in_incalzire = CASE WHEN COALESCE(iv_incalzire, ivin, 0) != 0 THEN COALESCE(iv_incalzire, ivin, 0) ELSE 0 END
+`;
+
+router.post('/apartamente/batch-egalizare-indexuri', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const b = normalizeBodyKeys({ ...(req.query || {}), ...(req.body || {}) });
+    const asoc = resolveAsociatie(db, req);
+
+    const blocParam = b.bloc_id ?? b.bloc;
+    const scope = String(b.scope || (blocParam ? 'BLOC' : 'TOATE')).toUpperCase();
+
+    let info;
+    if (scope === 'TOATE' || scope === 'ALL' || !blocParam) {
+      info = db
+        .prepare(`${EGALIZARE_INDEXURI_SQL} WHERE bloc_id IN (SELECT id FROM blocuri WHERE asociatie_id = ? OR (? = 1 AND asociatie_id IS NULL))`)
+        .run(asoc.id, asoc.id);
+    } else {
+      const blocRow =
+        db.prepare('SELECT * FROM blocuri WHERE id = ?').get(blocParam) ||
+        db.prepare('SELECT * FROM blocuri WHERE bloc = ?').get(String(blocParam).trim());
+      if (!blocRow) {
+        return res.status(404).json({ error: 'Blocul selectat nu a fost găsit.' });
+      }
+      info = db.prepare(`${EGALIZARE_INDEXURI_SQL} WHERE bloc_id = ?`).run(blocRow.id);
+    }
+
+    res.json({
+      success: true,
+      updatedCount: info.changes
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/apartamente/:id/egalizare-indexuri', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const aptId = Number(req.params.id);
+    const existing = db.prepare('SELECT * FROM apartamente WHERE id = ?').get(aptId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Apartament negăsit.' });
+    }
+
+    const info = db.prepare(`${EGALIZARE_INDEXURI_SQL} WHERE id = ?`).run(aptId);
+    const updated = db.prepare('SELECT * FROM apartamente WHERE id = ?').get(aptId);
+
+    res.json({
+      success: true,
+      updatedCount: info.changes,
+      apartament: updated
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.get('/apartamente/:id/extins', (req, res) => {
   try {
     const db = resolveDb(req);
@@ -462,6 +865,18 @@ router.put('/apartamente/:id/extins', (req, res) => {
     }
 
     const b = normalizeBodyKeys(req.body);
+
+    // ARA.PRG: Automatically calculate gcal_red from gcal_red_lei when tarif_et > 0
+    if (b.gcal_red_lei !== undefined && b.gcal_red_lei !== null && b.gcal_red_lei !== '') {
+      const blocRow = existing.bloc_id
+        ? db.prepare('SELECT tarif_et FROM blocuri WHERE id = ?').get(existing.bloc_id)
+        : null;
+      const activePer = resolveActivePeriod(db, req, b.perioada_id);
+      const tarifEt = Number(b.tarif_et || blocRow?.tarif_et || activePer?.tarif_et || 0);
+      if (tarifEt > 0) {
+        b.gcal_red = Number((Number(b.gcal_red_lei) / tarifEt).toFixed(4));
+      }
+    }
 
     // Map FoxPro meter shorthand names if provided
     const aliasPairs = [
@@ -570,9 +985,126 @@ router.get('/casa', (req, res) => {
       params.push(String(tip).toUpperCase());
     }
     sql += ' ORDER BY data ASC, id ASC';
-    res.json(db.prepare(sql).all(...params));
+    const rows = db.prepare(sql).all(...params).map(r => ({
+      ...r,
+      cheltuiala: r.cheltuiala ?? r.explicatie
+    }));
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/casa/preia-incasari-zi', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const b = normalizeBodyKeys({ ...(req.query || {}), ...(req.body || {}) });
+    const asoc = resolveAsociatie(db, req);
+    const activePer = resolveActivePeriod(db, req, b.perioada_id);
+
+    const { isoDate, ddMmYyyy } = parseDateFormats(b.data);
+    const overwrite =
+      b.overwrite === false || b.overwrite === 'false' || b.overwrite === 0
+        ? false
+        : true;
+
+    // Sum all active (non-cancelled) payments collected on `data`
+    const platiRow = db
+      .prepare(`
+        SELECT ROUND(COALESCE(SUM(p.suma), 0), 2) AS sum_plati
+        FROM plati p
+        LEFT JOIN chitante c ON c.id = p.chitanta_id
+        WHERE (p.data IN (?, ?) OR c.data_emiterii IN (?, ?))
+          AND COALESCE(c.anulata, 0) = 0
+      `)
+      .get(isoDate, ddMmYyyy, isoDate, ddMmYyyy);
+
+    const chitFaraPlatiRow = db
+      .prepare(`
+        SELECT ROUND(COALESCE(SUM(c.suma), 0), 2) AS sum_chit
+        FROM chitante c
+        WHERE c.data_emiterii IN (?, ?)
+          AND COALESCE(c.anulata, 0) = 0
+          AND NOT EXISTS (SELECT 1 FROM plati p WHERE p.chitanta_id = c.id)
+      `)
+      .get(isoDate, ddMmYyyy);
+
+    const totalZi = round2(Number(platiRow?.sum_plati || 0) + Number(chitFaraPlatiRow?.sum_chit || 0));
+
+    const expRo = `INCASARILE ZILEI DE ${ddMmYyyy}`;
+    const expIso = `INCASARILE ZILEI DE ${isoDate}`;
+    const hasChelt = hasTableColumn(db, 'casa', 'cheltuiala');
+
+    const matchSql = hasChelt
+      ? `SELECT * FROM casa WHERE UPPER(TRIM(COALESCE(explicatie, ''))) IN (?, ?) OR UPPER(TRIM(COALESCE(cheltuiala, ''))) IN (?, ?) ORDER BY id DESC`
+      : `SELECT * FROM casa WHERE UPPER(TRIM(COALESCE(explicatie, ''))) IN (?, ?) ORDER BY id DESC`;
+    const matchParams = hasChelt
+      ? [expRo.toUpperCase(), expIso.toUpperCase(), expRo.toUpperCase(), expIso.toUpperCase()]
+      : [expRo.toUpperCase(), expIso.toUpperCase()];
+
+    const existingRows = db.prepare(matchSql).all(...matchParams);
+
+    if (existingRows.length > 0 && overwrite === false) {
+      const existingRow = {
+        ...existingRows[0],
+        cheltuiala: existingRows[0].cheltuiala ?? existingRows[0].explicatie
+      };
+      return res.json({
+        alreadyExists: true,
+        existingRow,
+        suma: totalZi,
+        data: isoDate
+      });
+    }
+
+    let entry = null;
+    const tx = db.transaction(() => {
+      if (existingRows.length > 0) {
+        const delStmt = db.prepare('DELETE FROM casa WHERE id = ?');
+        for (const r of existingRows) {
+          delStmt.run(r.id);
+        }
+      }
+
+      if (hasChelt) {
+        const info = db
+          .prepare(`
+            INSERT INTO casa (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie, cheltuiala)
+            VALUES (?, ?, 'INC-ZI', ?, ?, 'I', 'A', ?, ?)
+          `)
+          .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', isoDate, totalZi, expRo, expRo);
+        entry = db.prepare('SELECT * FROM casa WHERE id = ?').get(info.lastInsertRowid);
+      } else {
+        const info = db
+          .prepare(`
+            INSERT INTO casa (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie)
+            VALUES (?, ?, 'INC-ZI', ?, ?, 'I', 'A', ?)
+          `)
+          .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', isoDate, totalZi, expRo);
+        entry = db.prepare('SELECT * FROM casa WHERE id = ?').get(info.lastInsertRowid);
+      }
+    });
+
+    tx();
+
+    if (entry && entry.cheltuiala === undefined) {
+      entry.cheltuiala = entry.explicatie;
+    }
+
+    res.json({
+      success: true,
+      alreadyExists: false,
+      overwritten: existingRows.length > 0,
+      data: isoDate,
+      data_formatted: ddMmYyyy,
+      suma: totalZi,
+      id: entry?.id || null,
+      entry,
+      row: entry,
+      ...(totalZi === 0 ? { message: 'Zero incasari in ziua selectata' } : {})
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -595,17 +1127,91 @@ router.post('/casa', (req, res) => {
       : rawTip.startsWith('P') ? 'P' : 'I';
     const actPas = String(b.act_pas || 'A').toUpperCase() === 'P' ? 'P' : 'A';
     const document = String(b.document || '');
-    const explicatie = String(b.explicatie || '');
+    const explicatie = String(b.explicatie ?? b.cheltuiala ?? '');
 
-    const info = db
-      .prepare(`
-        INSERT INTO casa (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, tip, actPas, explicatie);
+    const hasChelt = hasTableColumn(db, 'casa', 'cheltuiala');
+    const info = hasChelt
+      ? db
+          .prepare(`
+            INSERT INTO casa (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie, cheltuiala)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, tip, actPas, explicatie, explicatie)
+      : db
+          .prepare(`
+            INSERT INTO casa (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, tip, actPas, explicatie);
 
     const entry = db.prepare('SELECT * FROM casa WHERE id = ?').get(info.lastInsertRowid);
+    if (entry && entry.cheltuiala === undefined) entry.cheltuiala = entry.explicatie;
     res.status(201).json({ success: true, id: Number(info.lastInsertRowid), entry });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/casa/:id', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const existing = db.prepare('SELECT * FROM casa WHERE id = ?').get(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Înregistrarea de casă nu a fost găsită.' });
+    }
+
+    const b = normalizeBodyKeys(req.body);
+    if (b.cheltuiala !== undefined && b.explicatie === undefined) b.explicatie = String(b.cheltuiala);
+    if (b.explicatie !== undefined && b.cheltuiala === undefined) b.cheltuiala = String(b.explicatie);
+    if (b.inc_pla !== undefined && b.tip === undefined) b.tip = b.inc_pla;
+
+    if (b.tip !== undefined) {
+      const rawTip = String(b.tip).toUpperCase();
+      b.tip = ['I', 'P', 'INCASARE', 'PLATA'].includes(rawTip)
+        ? rawTip
+        : rawTip.startsWith('P') ? 'P' : 'I';
+    }
+    if (b.act_pas !== undefined) {
+      b.act_pas = String(b.act_pas).toUpperCase() === 'P' ? 'P' : 'A';
+    }
+    if (b.suma !== undefined) {
+      const parsedSuma = Number(b.suma);
+      if (b.suma === null || b.suma === '' || typeof b.suma === 'boolean' || !Number.isFinite(parsedSuma) || parsedSuma === 0) {
+        return res.status(400).json({ error: 'Suma este obligatorie și trebuie să fie un număr nenul valid.' });
+      }
+      b.suma = parsedSuma;
+    }
+    if (b.data !== undefined) {
+      b.data = String(b.data).slice(0, 10);
+    }
+    if (b.document !== undefined) {
+      b.document = String(b.document);
+    }
+
+    const allowed = ['document', 'data', 'tip', 'act_pas', 'suma', 'explicatie'];
+    if (hasTableColumn(db, 'casa', 'cheltuiala')) {
+      allowed.push('cheltuiala');
+    }
+
+    const updates = [];
+    const values = [];
+    for (const col of allowed) {
+      if (b[col] !== undefined) {
+        updates.push(`${col} = ?`);
+        values.push(b[col]);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Niciun câmp valid transmis pentru actualizarea înregistrării de casă.' });
+    }
+
+    values.push(existing.id);
+    db.prepare(`UPDATE casa SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+    const entry = db.prepare('SELECT * FROM casa WHERE id = ?').get(existing.id);
+    if (entry && entry.cheltuiala === undefined) entry.cheltuiala = entry.explicatie;
+    res.json({ success: true, id: existing.id, entry, row: entry });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -643,7 +1249,11 @@ router.get('/banca', (req, res) => {
       params.push(String(tip).toUpperCase());
     }
     sql += ' ORDER BY data ASC, id ASC';
-    res.json(db.prepare(sql).all(...params));
+    const rows = db.prepare(sql).all(...params).map(r => ({
+      ...r,
+      cheltuiala: r.cheltuiala ?? r.explicatie
+    }));
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -668,17 +1278,91 @@ router.post('/banca', (req, res) => {
       : rawTip.startsWith('V') ? 'V' : 'D';
     const actPas = String(b.act_pas || 'A').toUpperCase() === 'P' ? 'P' : 'A';
     const document = String(b.document || '');
-    const explicatie = String(b.explicatie || '');
+    const explicatie = String(b.explicatie ?? b.cheltuiala ?? '');
 
-    const info = db
-      .prepare(`
-        INSERT INTO banca (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, tip, actPas, explicatie);
+    const hasChelt = hasTableColumn(db, 'banca', 'cheltuiala');
+    const info = hasChelt
+      ? db
+          .prepare(`
+            INSERT INTO banca (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie, cheltuiala)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, tip, actPas, explicatie, explicatie)
+      : db
+          .prepare(`
+            INSERT INTO banca (perioada_id, asoc, document, data, suma, tip, act_pas, explicatie)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          .run(activePer?.id || null, asoc.nume || 'ASOCIATIA TEST', document, data, suma, tip, actPas, explicatie);
 
     const entry = db.prepare('SELECT * FROM banca WHERE id = ?').get(info.lastInsertRowid);
+    if (entry && entry.cheltuiala === undefined) entry.cheltuiala = entry.explicatie;
     res.status(201).json({ success: true, id: Number(info.lastInsertRowid), entry });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/banca/:id', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const existing = db.prepare('SELECT * FROM banca WHERE id = ?').get(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Înregistrarea bancară nu a fost găsită.' });
+    }
+
+    const b = normalizeBodyKeys(req.body);
+    if (b.cheltuiala !== undefined && b.explicatie === undefined) b.explicatie = String(b.cheltuiala);
+    if (b.explicatie !== undefined && b.cheltuiala === undefined) b.cheltuiala = String(b.explicatie);
+    if (b.dep_vir !== undefined && b.tip === undefined) b.tip = b.dep_vir;
+
+    if (b.tip !== undefined) {
+      const rawTip = String(b.tip).toUpperCase();
+      b.tip = ['D', 'V', 'DEPUNERE', 'VIRAMENT'].includes(rawTip)
+        ? rawTip
+        : rawTip.startsWith('V') ? 'V' : 'D';
+    }
+    if (b.act_pas !== undefined) {
+      b.act_pas = String(b.act_pas).toUpperCase() === 'P' ? 'P' : 'A';
+    }
+    if (b.suma !== undefined) {
+      const parsedSuma = Number(b.suma);
+      if (b.suma === null || b.suma === '' || typeof b.suma === 'boolean' || !Number.isFinite(parsedSuma) || parsedSuma === 0) {
+        return res.status(400).json({ error: 'Suma operațiunii bancare trebuie să fie un număr nenul valid.' });
+      }
+      b.suma = parsedSuma;
+    }
+    if (b.data !== undefined) {
+      b.data = String(b.data).slice(0, 10);
+    }
+    if (b.document !== undefined) {
+      b.document = String(b.document);
+    }
+
+    const allowed = ['document', 'data', 'tip', 'act_pas', 'suma', 'explicatie'];
+    if (hasTableColumn(db, 'banca', 'cheltuiala')) {
+      allowed.push('cheltuiala');
+    }
+
+    const updates = [];
+    const values = [];
+    for (const col of allowed) {
+      if (b[col] !== undefined) {
+        updates.push(`${col} = ?`);
+        values.push(b[col]);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Niciun câmp valid transmis pentru actualizarea înregistrării bancare.' });
+    }
+
+    values.push(existing.id);
+    db.prepare(`UPDATE banca SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+    const entry = db.prepare('SELECT * FROM banca WHERE id = ?').get(existing.id);
+    if (entry && entry.cheltuiala === undefined) entry.cheltuiala = entry.explicatie;
+    res.json({ success: true, id: existing.id, entry, row: entry });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -715,6 +1399,199 @@ router.get('/patrimoniu', (req, res) => {
     res.json(db.prepare(sql).all(...params));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/patrimoniu/init-luna', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const b = normalizeBodyKeys({ ...(req.query || {}), ...(req.body || {}) });
+    const asoc = resolveAsociatie(db, req);
+    const period0 = resolveActivePeriod(db, req, b.perioada_id);
+
+    if (!period0) {
+      return res.status(404).json({ error: 'Perioada țintă nu a fost găsită.' });
+    }
+
+    const overwrite =
+      b.overwrite === false || b.overwrite === 'false' || b.overwrite === 0
+        ? false
+        : true;
+
+    const existingCurrent = db
+      .prepare('SELECT * FROM patrimoniu WHERE perioada_id = ? ORDER BY act_pas ASC, id ASC')
+      .all(period0.id);
+
+    if (existingCurrent.length > 0 && overwrite === false) {
+      return res.json({
+        alreadyInitialized: true,
+        alreadyExists: true,
+        count: existingCurrent.length,
+        rows: existingCurrent
+      });
+    }
+
+    const an0 = Number(period0.an);
+    const luna0 = Number(period0.luna);
+    const luna1 = luna0 === 1 ? 12 : luna0 - 1;
+    const an1 = luna0 === 1 ? an0 - 1 : an0;
+    const luna2 = luna1 === 1 ? 12 : luna1 - 1;
+    const an2 = luna1 === 1 ? an1 - 1 : an1;
+
+    const period1 = db.prepare('SELECT * FROM perioade WHERE an = ? AND luna = ?').get(an1, luna1);
+    const period2 = db.prepare('SELECT * FROM perioade WHERE an = ? AND luna = ?').get(an2, luna2);
+
+    const ultZi0Iso = String(period0.ultima_zi || getLastDayOfMonthIso(an0, luna0)).slice(0, 10);
+    const ultZi1Iso = String(period1?.ultima_zi || getLastDayOfMonthIso(an1, luna1)).slice(0, 10);
+    const ultZi2Iso = String(period2?.ultima_zi || getLastDayOfMonthIso(an2, luna2)).slice(0, 10);
+
+    const ultZi0Ro = isoToDdMmYyyy(ultZi0Iso);
+    const ultZi1Ro = isoToDdMmYyyy(ultZi1Iso);
+    const ultZi2Ro = isoToDdMmYyyy(ultZi2Iso);
+
+    const name0 = LUNI_RO[luna0] || '';
+    const name1 = LUNI_RO[luna1] || '';
+    const name2 = LUNI_RO[luna2] || '';
+
+    function rollPerioada(raw) {
+      const s = String(raw || '').trim();
+      if (!s) return s;
+      const up = s.toUpperCase();
+      if (up === `${name1} ${an1}`) return `${name0} ${an0}`;
+      if (up === name1) return name0;
+      if (up === `${name2} ${an2}`) return `${name1} ${an1}`;
+      if (up === name2) return name1;
+      if (name1 && up.includes(name1)) {
+        return up.replace(name1, name0).replace(String(an1), String(an0));
+      }
+      if (name2 && up.includes(name2)) {
+        return up.replace(name2, name1).replace(String(an2), String(an1));
+      }
+      return s;
+    }
+
+    function rollDataPres(raw) {
+      const s = String(raw || '').trim();
+      if (!s) return s;
+      const ym1 = `${an1}-${String(luna1).padStart(2, '0')}`;
+      const ym2 = `${an2}-${String(luna2).padStart(2, '0')}`;
+      const my1 = `.${String(luna1).padStart(2, '0')}.${an1}`;
+      const my2 = `.${String(luna2).padStart(2, '0')}.${an2}`;
+
+      if (s === ultZi1Iso || s.startsWith(ym1)) return ultZi0Iso;
+      if (s === ultZi1Ro || s.endsWith(my1)) return ultZi0Ro;
+      if (s === ultZi2Iso || s.startsWith(ym2)) return ultZi1Iso;
+      if (s === ultZi2Ro || s.endsWith(my2)) return ultZi1Ro;
+      return s;
+    }
+
+    // Find source rows from previous period (or fallback to existing/unscoped rows)
+    let sourceRows = period1
+      ? db.prepare('SELECT * FROM patrimoniu WHERE perioada_id = ? ORDER BY act_pas ASC, id ASC').all(period1.id)
+      : [];
+
+    if (sourceRows.length === 0) {
+      const prevPerWithRows = db
+        .prepare('SELECT perioada_id FROM patrimoniu WHERE perioada_id IS NOT NULL AND perioada_id != ? ORDER BY perioada_id DESC LIMIT 1')
+        .get(period0.id);
+      if (prevPerWithRows?.perioada_id) {
+        sourceRows = db
+          .prepare('SELECT * FROM patrimoniu WHERE perioada_id = ? ORDER BY act_pas ASC, id ASC')
+          .all(prevPerWithRows.perioada_id);
+      }
+    }
+
+    let copyFromExisting = false;
+    if (sourceRows.length === 0) {
+      if (existingCurrent.length > 0) {
+        sourceRows = existingCurrent;
+        copyFromExisting = true;
+      } else {
+        sourceRows = db
+          .prepare('SELECT * FROM patrimoniu WHERE perioada_id IS NULL ORDER BY act_pas ASC, id ASC')
+          .all();
+      }
+    }
+
+    const tx = db.transaction(() => {
+      if (existingCurrent.length > 0) {
+        db.prepare('DELETE FROM patrimoniu WHERE perioada_id = ?').run(period0.id);
+      }
+
+      const insStmt = db.prepare(`
+        INSERT INTO patrimoniu (perioada_id, asoc, document, data, suma, act_pas, explicatie, perioada, data_pres)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const r of sourceRows) {
+        insStmt.run(
+          period0.id,
+          r.asoc || asoc.nume || 'ASOCIATIA TEST',
+          String(r.document || ''),
+          ultZi0Iso,
+          Number(r.suma ?? 0),
+          r.act_pas === 'P' ? 'P' : 'A',
+          String(r.explicatie || ''),
+          rollPerioada(r.perioada),
+          rollDataPres(r.data_pres)
+        );
+      }
+    });
+
+    tx();
+
+    const rows = db
+      .prepare('SELECT * FROM patrimoniu WHERE perioada_id = ? ORDER BY act_pas ASC, id ASC')
+      .all(period0.id);
+
+    res.json({
+      success: true,
+      alreadyInitialized: false,
+      overwritten: existingCurrent.length > 0 || copyFromExisting,
+      perioada_id: period0.id,
+      data: ultZi0Iso,
+      count: rows.length,
+      updatedCount: rows.length,
+      rows
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/patrimoniu/batch-data', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const b = normalizeBodyKeys({ ...(req.query || {}), ...(req.body || {}) });
+    const activePer = resolveActivePeriod(db, req, b.perioada_id);
+
+    if (!b.data) {
+      return res.status(400).json({ error: 'Câmpul data este obligatoriu pentru schimbarea datei în masă.' });
+    }
+
+    const { isoDate } = parseDateFormats(b.data);
+
+    let info;
+    if (activePer?.id) {
+      info = db
+        .prepare('UPDATE patrimoniu SET data = ? WHERE perioada_id = ? OR perioada_id IS NULL')
+        .run(isoDate, activePer.id);
+    } else {
+      info = db.prepare('UPDATE patrimoniu SET data = ?').run(isoDate);
+    }
+
+    const rows = activePer?.id
+      ? db.prepare('SELECT * FROM patrimoniu WHERE perioada_id = ? OR perioada_id IS NULL ORDER BY act_pas ASC, id ASC').all(activePer.id)
+      : db.prepare('SELECT * FROM patrimoniu ORDER BY act_pas ASC, id ASC').all();
+
+    res.json({
+      success: true,
+      data: isoDate,
+      updatedCount: info.changes,
+      rows
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

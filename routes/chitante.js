@@ -4,11 +4,16 @@
  * Express router for FoxPro Centralizare & Casierie operations (CHI.PRG, CHO.FXP):
  * - GET /ledger/apartament/:id (getApartmentLedger + calculatePenalties preview)
  * - GET /ledger/sumar (getAssociationLedgerSummary)
+ * - GET /fonduri-sumar/:apartamentId (getApartmentFundSummary: FNDRU, FNDRE, FNDPE, Regie)
  * - GET /penalitati/:apartamentId (calculatePenalties)
  * - POST /penalitati/:apartamentId/inregistreaza (bookPenalties)
  * - POST /individual & POST / (CHI: issueReceipt)
- * - POST /colectiv (CHO: issueCollectiveReceipt)
+ * - POST /colectiv (CHO: issueCollectiveReceipt with mod_valoare & mod_numar)
  * - POST /:id/anuleaza (voidReceipt)
+ * - POST /datorii (CHI: manual debt entry)
+ * - PUT /datorii/:id (CHI: inline debt row edit)
+ * - DELETE /datorii/:id (CHI: F5=Sterg debt row deletion)
+ * - POST /datorii/:id/punnr (CHI: F1=PUNNR one-key stamp receipt on debt row)
  */
 
 const express = require('express');
@@ -16,7 +21,16 @@ const router = express.Router();
 const { getDb } = require('../db');
 const { getApartmentLedger, getAssociationLedgerSummary, LUNI_RO } = require('../services/ledger');
 const { calculatePenalties, bookPenalties } = require('../services/penalties');
-const { issueReceipt, issueCollectiveReceipt, voidReceipt, syncApartmentScalars } = require('../services/cashier');
+const {
+  issueReceipt,
+  issueCollectiveReceipt,
+  updateDebtRow,
+  deleteDebtRow,
+  stampReceiptOnDebtRow,
+  getApartmentFundSummary,
+  voidReceipt,
+  syncApartmentScalars
+} = require('../services/cashier');
 const { logAudit } = require('../services/auth');
 
 function resolveDb(req) {
@@ -111,6 +125,20 @@ router.get('/ledger/sumar', (req, res) => {
     res.json(summary);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+//  2b. SUMAR CUMULATIV FONDURI PE APARTAMENT (FNDRU, FNDRE, FNDPE)
+// ============================================================
+router.get('/fonduri-sumar/:apartamentId', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const apartamentId = Number(req.params.apartamentId);
+    const summary = getApartmentFundSummary(db, apartamentId);
+    res.json(summary);
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
   }
 });
 
@@ -310,6 +338,88 @@ router.post('/datorii', (req, res) => {
     res.status(201).json({ success: true, id: Number(info.lastInsertRowid), datorie: row });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ============================================================
+//  9. EDITARE INLINE RÂND DATORIE (CHI BROWSE EDIT)
+// ============================================================
+router.put('/datorii/:id', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const datorieId = Number(req.params.id);
+    const result = updateDebtRow(db, datorieId, req.body || {});
+
+    logAudit(db, {
+      user_id: req.user?.id,
+      username: req.user?.username,
+      actiune: 'UPDATE_DEBT_ROW',
+      entitate: 'datorii',
+      entitate_id: datorieId,
+      detalii: result.datorie,
+      ip: req.ip
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// ============================================================
+//  10. ȘTERGERE RÂND DATORIE (CHI.PRG F5 = STERG)
+// ============================================================
+router.delete('/datorii/:id', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const datorieId = Number(req.params.id);
+    const force = req.query.force === 'true' || req.body?.force === true;
+    const result = deleteDebtRow(db, datorieId, { force });
+
+    logAudit(db, {
+      user_id: req.user?.id,
+      username: req.user?.username,
+      actiune: 'DELETE_DEBT_ROW',
+      entitate: 'datorii',
+      entitate_id: datorieId,
+      detalii: result,
+      ip: req.ip
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// ============================================================
+//  11. ȘTAMPILARE CHITANȚĂ PE RÂND DATORIE (CHI.PRG F1 = PUNNR)
+// ============================================================
+router.post('/datorii/:id/punnr', (req, res) => {
+  try {
+    const db = resolveDb(req);
+    const datorieId = Number(req.params.id);
+    const result = stampReceiptOnDebtRow(db, datorieId, req.body || {});
+
+    logAudit(db, {
+      user_id: req.user?.id,
+      username: req.user?.username,
+      actiune: 'CHI_PUNNR_STAMP',
+      entitate: 'datorii',
+      entitate_id: datorieId,
+      detalii: {
+        datorie_id: datorieId,
+        chitanta_id: result.chitanta?.id,
+        numar_chitanta: result.numar_chitanta,
+        suma_achitata: result.suma_achitata,
+        slot: result.slot
+      },
+      ip: req.ip
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
   }
 });
 
