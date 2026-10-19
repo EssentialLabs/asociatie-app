@@ -116,6 +116,18 @@ function numarInLitereClient(suma) {
   return (textLei + textBani).trim();
 }
 
+function syncSidebarViewportHeight() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar || window.innerWidth <= 768) return;
+  const topNav = document.querySelector('.top-nav');
+  const topNavBottom = topNav ? Math.max(0, topNav.getBoundingClientRect().bottom) : 65;
+  const rect = sidebar.getBoundingClientRect();
+  const offsetTop = Math.max(topNavBottom, rect.top > 0 ? rect.top : topNavBottom);
+  document.documentElement.style.setProperty('--sidebar-sticky-top', `${Math.round(topNavBottom)}px`);
+  document.documentElement.style.setProperty('--sidebar-top-offset', `${Math.round(offsetTop)}px`);
+}
+window.syncSidebarViewportHeight = syncSidebarViewportHeight;
+
 // ============================================================
 //  INIT
 // ============================================================
@@ -125,6 +137,10 @@ document.addEventListener('DOMContentLoaded', () => {
   loadPerioadeGlobal();
   loadBlocuri();
   loadDashboard();
+  syncSidebarViewportHeight();
+
+  window.addEventListener('resize', syncSidebarViewportHeight);
+  window.addEventListener('scroll', syncSidebarViewportHeight, { passive: true });
 
   // Initializare Routing URL Hash (#blocuri, #avizier, #rapoarte/LAF, etc.)
   window.addEventListener('hashchange', () => navigateFromHash());
@@ -149,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const anInput = document.getElementById('new-fact-an');
   if (anInput) anInput.value = now.getFullYear();
 
-  ['cas-data', 'cho-data', 'reg-casa-data', 'reg-banca-data', 'reg-pat-data', 'reg-ord-data'].forEach(id => {
+  ['cas-data', 'cho-data', 'reg-casa-data', 'reg-banca-data', 'reg-pat-data', 'reg-ord-data', 'casa-data', 'banca-data', 'patr-data', 'ord-data'].forEach(id => {
     const el = document.getElementById(id);
     if (el && !el.value) el.value = todayIso;
   });
@@ -293,6 +309,7 @@ async function switchAsociatieWorkspace(asocId) {
     populateCasierieBlocSelect();
     loadChitante();
   }
+  syncSidebarViewportHeight();
   showAlert(`Spațiul de lucru a fost comutat pe Asociația #${currentAsociatieId}!`, 'info');
 }
 window.switchAsociatieWorkspace = switchAsociatieWorkspace;
@@ -325,6 +342,7 @@ function updateGlobalPeriodStatusUI() {
   const status = (activePer?.status || 'DESCHISA').toUpperCase();
   const badge = document.getElementById('global-perioada-status-badge');
   const lunaBadge = document.getElementById('luna-curenta-status-badge');
+  const lunaPageBadge = document.getElementById('luna-page-status-badge');
   const lunaText = document.getElementById('luna-curenta-status-text');
 
   const badgeClass = status === 'INCHISA'
@@ -341,9 +359,23 @@ function updateGlobalPeriodStatusUI() {
     lunaBadge.className = `badge ${badgeClass}`;
     lunaBadge.textContent = status;
   }
+  if (lunaPageBadge) {
+    lunaPageBadge.className = `badge ${badgeClass}`;
+    lunaPageBadge.textContent = `Stare Perioadă: ${status}`;
+  }
   if (lunaText && activePer) {
     const numeLuna = activePer.luna_nume || NUME_LUNI_RO[activePer.luna] || activePer.luna;
     lunaText.innerHTML = `Perioada selectată: <strong>${numeLuna} ${activePer.an}</strong> • Ultima zi (ADG): <strong>${activePer.ultima_zi || '-'}</strong> • Tarif AR: <strong>${activePer.tarif_ar ?? '-'}</strong> lei/m³ • Tarif CA: <strong>${activePer.tarif_ca ?? '-'}</strong> lei/m³`;
+  }
+  if (activePer) {
+    const dashAr = document.getElementById('dash-tarif-ar');
+    const dashCa = document.getElementById('dash-tarif-ca');
+    const dashProc = document.getElementById('dash-proc-ca');
+    const dashZi = document.getElementById('dash-ultima-zi');
+    if (dashAr) dashAr.textContent = activePer.tarif_ar ?? 9.48;
+    if (dashCa) dashCa.textContent = activePer.tarif_ca ?? 9.67;
+    if (dashProc) dashProc.textContent = activePer.proc_ca ?? 100;
+    if (dashZi) dashZi.textContent = (activePer.ultima_zi || '2026-09-30').slice(0, 10);
   }
 }
 
@@ -362,8 +394,10 @@ function switchPerioadaGlobal(perioadaId) {
 // ============================================================
 function updateWorkflowStepperUI(stage) {
   activeWorkflowStage = stage;
-  document.querySelectorAll('#workflow-stepper-bar .workflow-step').forEach(btn => {
-    const s = parseInt(btn.getAttribute('data-stage'), 10);
+  document.querySelectorAll('#workflow-stepper-bar .workflow-step, #workflow-stepper-bar .stepper-stage').forEach(btn => {
+    const dataStage = parseInt(btn.getAttribute('data-stage'), 10);
+    const idStage = btn.id && btn.id.startsWith('stepper-stage-') ? parseInt(btn.id.replace('stepper-stage-', ''), 10) : NaN;
+    const s = !isNaN(dataStage) ? dataStage : idStage;
     btn.classList.toggle('active', s === stage);
   });
 }
@@ -491,6 +525,7 @@ function switchMainSection(section, updateHistory = true) {
     loadControlTowerSummary();
     loadAsociatiiWorkspaces();
   }
+  syncSidebarViewportHeight();
 }
 
 // ============================================================
@@ -555,6 +590,20 @@ function renderAuthUI() {
     `;
   }
 }
+
+window.setRole = function(role) {
+  const normalizedRole = role === 'superadmin' ? 'superadmin' : 'admin';
+  currentUser = {
+    username: normalizedRole,
+    role: normalizedRole,
+    name: normalizedRole === 'superadmin' ? 'Superadmin Turn de Control' : 'Administrator Asociație',
+    canImpersonate: normalizedRole === 'superadmin'
+  };
+  isImpersonating = false;
+  localStorage.setItem('asoc_user', JSON.stringify(currentUser));
+  localStorage.removeItem('asoc_impersonation');
+  renderAuthUI();
+};
 
 async function quickLogin(role) {
   const res = await apiPost('/api/auth/login', { role });
@@ -678,28 +727,31 @@ function renderControlTowerAsociatiiTable(rows) {
 }
 
 async function createNewCleanAsociatie() {
-  const nume = document.getElementById('ct-new-asoc-nume')?.value.trim();
+  const numeEl = document.getElementById('new-asoc-nume') || document.getElementById('ct-new-asoc-nume');
+  const nume = numeEl?.value.trim();
   if (!nume) return showAlert('Introduceți denumirea noii asociații!', 'warning');
 
   const payload = {
     nume,
-    cod_fiscal: document.getElementById('ct-new-asoc-cui')?.value.trim() || '',
-    administrator: document.getElementById('ct-new-asoc-admin')?.value.trim() || '',
-    presedinte: document.getElementById('ct-new-asoc-pres')?.value.trim() || '',
-    adresa: document.getElementById('ct-new-asoc-adresa')?.value.trim() || '',
-    luna_lucru: parseInt(document.getElementById('ct-new-asoc-luna')?.value, 10) || 10,
-    an_lucru: parseInt(document.getElementById('ct-new-asoc-an')?.value, 10) || 2026,
-    proc_penalizare: parseFloat(document.getElementById('ct-new-asoc-penal')?.value) || 0.2
+    cod_fiscal: (document.getElementById('new-asoc-cui')?.value || document.getElementById('ct-new-asoc-cui')?.value || '').trim(),
+    administrator: (document.getElementById('new-asoc-admin')?.value || document.getElementById('ct-new-asoc-admin')?.value || '').trim(),
+    presedinte: (document.getElementById('new-asoc-pres')?.value || document.getElementById('ct-new-asoc-pres')?.value || '').trim(),
+    adresa: (document.getElementById('new-asoc-adresa')?.value || document.getElementById('ct-new-asoc-adresa')?.value || '').trim(),
+    serie_chitante: (document.getElementById('new-asoc-serie')?.value || document.getElementById('ct-new-asoc-serie')?.value || 'ASOC').trim(),
+    luna_lucru: parseInt(document.getElementById('new-asoc-luna')?.value || document.getElementById('ct-new-asoc-luna')?.value, 10) || 10,
+    an_lucru: parseInt(document.getElementById('new-asoc-an')?.value || document.getElementById('ct-new-asoc-an')?.value, 10) || 2026,
+    proc_penalizare: parseFloat(document.getElementById('new-asoc-penal')?.value || document.getElementById('ct-new-asoc-penal')?.value) || 0.2
   };
 
   const res = await apiPost('/api/operatiuni/asociatii', payload);
   if (res.error) return showAlert(res.error, 'danger');
 
   showAlert(`Asociația „${nume}” (#${res.asociatie?.id || res.id}) a fost creată cu un spațiu de lucru curat!`, 'success');
-  document.getElementById('ct-new-asoc-nume').value = '';
+  if (numeEl) numeEl.value = '';
   await loadAsociatiiWorkspaces();
-  if (res.asociatie?.id) {
-    await switchAsociatieWorkspace(res.asociatie.id);
+  const newId = res.asociatie?.id || res.id;
+  if (newId) {
+    await switchAsociatieWorkspace(newId);
   }
 }
 
@@ -772,31 +824,43 @@ async function showDateGeneraleModal() {
     an: 2026, luna: 9, ultima_zi: '2026-09-30', tarif_ar: 9.48, tarif_ca: 9.67, proc_ca: 100, tarif_et: 0, status: 'DESCHISA'
   };
 
-  document.getElementById('adg-an').value = activePer.an || 2026;
-  document.getElementById('adg-luna').value = activePer.luna || 9;
-  document.getElementById('adg-ultima-zi').value = (activePer.ultima_zi || '2026-09-30').slice(0, 10);
-  document.getElementById('adg-tarif-ar').value = activePer.tarif_ar ?? 9.48;
-  document.getElementById('adg-tarif-ca').value = activePer.tarif_ca ?? 9.67;
-  document.getElementById('adg-proc-ca').value = activePer.proc_ca ?? 100;
-  document.getElementById('adg-tarif-et').value = activePer.tarif_et ?? 0;
-  document.getElementById('adg-status').value = activePer.status || 'DESCHISA';
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setVal('adg-perioada-id', activePer.id || '');
+  setVal('adg-an', activePer.an || 2026);
+  setVal('adg-luna', activePer.luna || 9);
+  setVal('adg-ultima-zi', (activePer.ultima_zi || '2026-09-30').slice(0, 10));
+  setVal('adg-tarif-ar', activePer.tarif_ar ?? 9.48);
+  setVal('adg-tarif-ca', activePer.tarif_ca ?? 9.67);
+  setVal('adg-proc-ca', activePer.proc_ca ?? 100);
+  setVal('adg-tarif-et', activePer.tarif_et ?? 0);
+  setVal('adg-status', activePer.status || 'DESCHISA');
 
   showModal('modal-date-generale');
 }
 
 async function saveDateGeneraleADG() {
+  const activePer = perioadeCache.find(p => Number(p.id) === Number(currentPerioadaId)) || perioadeCache[0] || {};
   const payload = {
-    an: parseInt(document.getElementById('adg-an').value, 10) || 2026,
-    luna: parseInt(document.getElementById('adg-luna').value, 10) || 9,
-    ultima_zi: document.getElementById('adg-ultima-zi').value,
-    tarif_ar: parseFloat(document.getElementById('adg-tarif-ar').value) || 0,
-    tarif_ca: parseFloat(document.getElementById('adg-tarif-ca').value) || 0,
-    proc_ca: parseFloat(document.getElementById('adg-proc-ca').value) || 100,
-    tarif_et: parseFloat(document.getElementById('adg-tarif-et').value) || 0
+    an: parseInt(document.getElementById('adg-an')?.value, 10) || activePer.an || 2026,
+    luna: parseInt(document.getElementById('adg-luna')?.value, 10) || activePer.luna || 9,
+    ultima_zi: document.getElementById('adg-ultima-zi')?.value || activePer.ultima_zi || '2026-09-30',
+    tarif_ar: parseFloat(document.getElementById('adg-tarif-ar')?.value) || 0,
+    tarif_ca: parseFloat(document.getElementById('adg-tarif-ca')?.value) || 0,
+    proc_ca: parseFloat(document.getElementById('adg-proc-ca')?.value) || 100,
+    tarif_et: parseFloat(document.getElementById('adg-tarif-et')?.value) || 0
   };
 
   const res = await apiPost('/api/operatiuni/perioade', payload);
   if (res.error) return showAlert(res.error, 'danger');
+
+  const dashAr = document.getElementById('dash-tarif-ar');
+  const dashCa = document.getElementById('dash-tarif-ca');
+  const dashProc = document.getElementById('dash-proc-ca');
+  const dashZi = document.getElementById('dash-ultima-zi');
+  if (dashAr) dashAr.textContent = payload.tarif_ar;
+  if (dashCa) dashCa.textContent = payload.tarif_ca;
+  if (dashProc) dashProc.textContent = payload.proc_ca;
+  if (dashZi) dashZi.textContent = payload.ultima_zi;
 
   closeModal('modal-date-generale');
   showAlert('Datele generale ale perioadei (ADG) au fost salvate!', 'success');
@@ -806,39 +870,41 @@ async function saveDateGeneraleADG() {
 
 // ADA.PRG — Actualizare Facturi Asociație
 async function showFacturiAsociatieModal() {
-  const asoc = await apiGet('/api/operatiuni/asociatie/facturi');
-  document.getElementById('ada-apa-rece').value = asoc.apa_rece ?? 0;
-  document.getElementById('ada-can-met').value = asoc.can_met ?? 0;
-  document.getElementById('ada-apa-calda').value = asoc.apa_calda ?? 0;
-  document.getElementById('ada-etac').value = asoc.etac ?? 0;
-  document.getElementById('ada-incalzire').value = asoc.incalzire ?? 0;
-  document.getElementById('ada-gunoi').value = asoc.gunoi ?? 0;
-  document.getElementById('ada-ch-admin').value = asoc.ch_admin ?? 0;
-  document.getElementById('ada-sal-tesa').value = asoc.sal_tesa ?? 0;
-  document.getElementById('ada-sal-feme').value = asoc.sal_feme ?? 0;
-  document.getElementById('ada-abonament').value = asoc.abonament ?? 0;
-  document.getElementById('ada-ch-sediu').value = asoc.ch_sediu ?? 0;
-  document.getElementById('ada-rulment').value = asoc.rulment ?? 0;
-  document.getElementById('ada-cota-fr').value = asoc.cota_fr ?? 0;
+  const asoc = await apiGet('/api/operatiuni/asociatie/facturi') || {};
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setVal('ada-apa-rece', asoc.apa_rece ?? 0);
+  setVal('ada-can-met', asoc.can_met ?? 0);
+  setVal('ada-apa-calda', asoc.apa_calda ?? 0);
+  setVal('ada-etac', asoc.etac ?? 0);
+  setVal('ada-incalzire', asoc.incalzire ?? 0);
+  setVal('ada-gunoi', asoc.gunoi ?? 0);
+  setVal('ada-ch-admin', asoc.ch_admin ?? 0);
+  setVal('ada-sal-tesa', asoc.sal_tesa ?? 0);
+  setVal('ada-sal-feme', asoc.sal_feme ?? 0);
+  setVal('ada-abonament', asoc.abonament ?? 0);
+  setVal('ada-ch-sediu', asoc.ch_sediu ?? 0);
+  setVal('ada-rulment', asoc.rulment ?? 0);
+  setVal('ada-cota-fr', asoc.cota_fr ?? 0);
 
   showModal('modal-facturi-asociatie');
 }
 
 async function saveFacturiAsociatieADA() {
+  const getVal = (id) => parseFloat(document.getElementById(id)?.value) || 0;
   const payload = {
-    apa_rece: parseFloat(document.getElementById('ada-apa-rece').value) || 0,
-    can_met: parseFloat(document.getElementById('ada-can-met').value) || 0,
-    apa_calda: parseFloat(document.getElementById('ada-apa-calda').value) || 0,
-    etac: parseFloat(document.getElementById('ada-etac').value) || 0,
-    incalzire: parseFloat(document.getElementById('ada-incalzire').value) || 0,
-    gunoi: parseFloat(document.getElementById('ada-gunoi').value) || 0,
-    ch_admin: parseFloat(document.getElementById('ada-ch-admin').value) || 0,
-    sal_tesa: parseFloat(document.getElementById('ada-sal-tesa').value) || 0,
-    sal_feme: parseFloat(document.getElementById('ada-sal-feme').value) || 0,
-    abonament: parseFloat(document.getElementById('ada-abonament').value) || 0,
-    ch_sediu: parseFloat(document.getElementById('ada-ch-sediu').value) || 0,
-    rulment: parseFloat(document.getElementById('ada-rulment').value) || 0,
-    cota_fr: parseFloat(document.getElementById('ada-cota-fr').value) || 0
+    apa_rece: getVal('ada-apa-rece'),
+    can_met: getVal('ada-can-met'),
+    apa_calda: getVal('ada-apa-calda'),
+    etac: getVal('ada-etac'),
+    incalzire: getVal('ada-incalzire'),
+    gunoi: getVal('ada-gunoi'),
+    ch_admin: getVal('ada-ch-admin'),
+    sal_tesa: getVal('ada-sal-tesa'),
+    sal_feme: getVal('ada-sal-feme'),
+    abonament: getVal('ada-abonament'),
+    ch_sediu: getVal('ada-ch-sediu'),
+    rulment: getVal('ada-rulment'),
+    cota_fr: getVal('ada-cota-fr')
   };
 
   const res = await apiPut('/api/operatiuni/asociatie/facturi', payload);
@@ -1738,6 +1804,7 @@ function populateSetariBloc() {
   setVal('set-strada', currentBloc.strada || '');
   setVal('set-numar', currentBloc.numar || '');
   setVal('set-cod', currentBloc.cod || currentBloc.cod_postal || '');
+  setVal('set-cod-postal', currentBloc.cod || currentBloc.cod_postal || '');
 
   setVal('set-tarif-ar', currentBloc.tarif_apa_rece ?? 8.5);
   setVal('set-tarif-canal', currentBloc.tarif_canal ?? 4.0);
@@ -1754,6 +1821,7 @@ function populateSetariBloc() {
   setVal('set-mod-r-asc', currentBloc.mod_r_asc || 'PER');
 
   setVal('set-proc-inccom', currentBloc.procinccom ?? 30);
+  setVal('set-procinccom', currentBloc.procinccom ?? 30);
   setVal('set-proc-av-ac', currentBloc.proc_av_ac ?? 0);
   setVal('set-proc-av-in', currentBloc.proc_av_in ?? 0);
   setVal('set-proc-sal-f', currentBloc.proc_sal_femeie ?? currentBloc.proc_sal_f ?? 100);
@@ -1769,10 +1837,15 @@ function populateSetariBloc() {
   setVal('set-constin', currentBloc.const_incalzire ?? currentBloc.constin ?? 1);
 
   setVal('set-fact-gaz', currentBloc.gaz ?? 0);
+  setVal('set-fact-gunoi', currentBloc.gunoi ?? 0);
   setVal('set-fact-curent', currentBloc.curent ?? 0);
   setVal('set-fact-curent-sc', currentBloc.curent_sc ?? 0);
   setVal('set-fact-curent-li', currentBloc.curent_li ?? 0);
   setVal('set-fact-ascensor', currentBloc.ascensor ?? 0);
+  setVal('set-fact-sal-feme', currentBloc.sal_feme ?? 0);
+  setVal('set-fact-sal-tesa', currentBloc.sal_tesa ?? 0);
+  setVal('set-fact-ch-admin', currentBloc.ch_admin ?? 0);
+  setVal('set-fact-ch-sediu', currentBloc.ch_sediu ?? 0);
   setVal('set-fact-prest-serv', currentBloc.prest_serv ?? 0);
   setVal('set-fact-chelt-inc', currentBloc.chelt_inc ?? 0);
   setVal('set-fact-abonament', currentBloc.abonament ?? 0);
@@ -1783,19 +1856,22 @@ async function saveSetariBloc() {
   if (!currentBloc) return;
   const getVal = (id, def = 0) => {
     const el = document.getElementById(id);
-    return el ? (parseFloat(el.value) || def) : def;
+    if (!el || el.value === '') return def;
+    const n = parseFloat(el.value);
+    return isNaN(n) ? def : n;
   };
   const getStr = (id, def = '') => {
     const el = document.getElementById(id);
     return el ? el.value.trim() : def;
   };
 
+  const codPostalVal = getStr('set-cod-postal') || getStr('set-cod');
   const payload = {
     bloc: getStr('set-bloc', currentBloc.bloc),
     strada: getStr('set-strada'),
     numar: getStr('set-numar'),
-    cod: getStr('set-cod'),
-    cod_postal: getStr('set-cod'),
+    cod: codPostalVal,
+    cod_postal: codPostalVal,
     tarif_apa_rece: getVal('set-tarif-ar', 8.5),
     tarif_canal: getVal('set-tarif-canal', 4.0),
     tarif_apa_calda: getVal('set-tarif-ac', 18.0),
@@ -1808,7 +1884,7 @@ async function saveSetariBloc() {
     mod_r_inc: getStr('set-mod-r-inc', 'SUP'),
     modr_difin: getStr('set-modr-difin', 'SUP'),
     mod_r_asc: getStr('set-mod-r-asc', 'PER'),
-    procinccom: getVal('set-proc-inccom', 30),
+    procinccom: getVal('set-procinccom', getVal('set-proc-inccom', 30)),
     proc_av_ac: getVal('set-proc-av-ac', 0),
     proc_av_in: getVal('set-proc-av-in', 0),
     proc_sal_femeie: getVal('set-proc-sal-f', 100),
@@ -1826,10 +1902,15 @@ async function saveSetariBloc() {
     constin: getVal('set-constin', 1),
     const_incalzire: getVal('set-constin', 1),
     gaz: getVal('set-fact-gaz', 0),
+    gunoi: getVal('set-fact-gunoi', currentBloc.gunoi ?? 0),
     curent: getVal('set-fact-curent', 0),
     curent_sc: getVal('set-fact-curent-sc', 0),
     curent_li: getVal('set-fact-curent-li', 0),
     ascensor: getVal('set-fact-ascensor', 0),
+    sal_feme: getVal('set-fact-sal-feme', currentBloc.sal_feme ?? 0),
+    sal_tesa: getVal('set-fact-sal-tesa', currentBloc.sal_tesa ?? 0),
+    ch_admin: getVal('set-fact-ch-admin', currentBloc.ch_admin ?? 0),
+    ch_sediu: getVal('set-fact-ch-sediu', currentBloc.ch_sediu ?? 0),
     prest_serv: getVal('set-fact-prest-serv', 0),
     chelt_inc: getVal('set-fact-chelt-inc', 0),
     abonament: getVal('set-fact-abonament', 0),
@@ -1996,7 +2077,13 @@ async function initRapoarteCatalog() {
   if (!reportCatalogCache) {
     try {
       const cat = await apiGet('/api/rapoarte/catalog');
-      if (cat && (cat.LISTARE || cat.SITUATII)) {
+      if (Array.isArray(cat)) {
+        reportCatalogCache = {
+          LISTARE: cat.filter(r => (r.menu || r.category || '').toUpperCase().includes('LISTARE')),
+          SITUATII: cat.filter(r => (r.menu || r.category || '').toUpperCase().includes('SITUAT')),
+          CENTRALIZARE: cat.filter(r => (r.menu || r.category || '').toUpperCase().includes('CENTRAL') || ['IN1', 'IN2'].includes(r.code))
+        };
+      } else if (cat && (cat.LISTARE || cat.SITUATII || cat.CENTRALIZARE)) {
         reportCatalogCache = cat;
       }
     } catch (e) {
@@ -2032,6 +2119,15 @@ async function initRapoarteCatalog() {
   }
 
   await selectReport(currentReportCode || 'LAF');
+}
+
+function filterReportCatalogSidebar(query = '') {
+  const q = String(query || '').trim().toLowerCase();
+  document.querySelectorAll('.report-catalog-btn').forEach(btn => {
+    const code = (btn.getAttribute('data-report-code') || '').toLowerCase();
+    const text = (btn.innerText || '').toLowerCase();
+    btn.style.display = (!q || code.includes(q) || text.includes(q)) ? '' : 'none';
+  });
 }
 
 async function onRapoarteBlocChange() {
@@ -2323,7 +2419,7 @@ async function onCasierieBlocChange() {
 }
 
 async function onCasierieApartChange() {
-  const apId = document.getElementById('cas-apart-select').value;
+  const apId = document.getElementById('cas-apart-select')?.value;
   const debtBox = document.getElementById('cas-debt-box');
   if (!apId) {
     if (debtBox) debtBox.style.display = 'none';
@@ -2335,20 +2431,24 @@ async function onCasierieApartChange() {
   currentCasierieLedger = ledger;
 
   const ap = ledger.apartament || {};
-  document.getElementById('cas-debt-proprietar').textContent = ap.nume_proprietar || 'Proprietar';
-  document.getElementById('cas-debt-details').textContent = `Bloc ${ap.bloc || '-'} • Ap. ${ap.numar_apart} • ${ap.persoane ?? 1} Pers. • ${ap.suprafata || 0} mp`;
+  const propEl = document.getElementById('cas-debt-proprietar');
+  if (propEl) propEl.textContent = ap.nume_proprietar || 'Proprietar';
+  const detEl = document.getElementById('cas-debt-details');
+  if (detEl) detEl.textContent = `Bloc ${ap.bloc || '-'} • Ap. ${ap.numar_apart} • ${ap.persoane ?? 1} Pers. • ${ap.suprafata || 0} mp`;
 
   const totals = ledger.totals || { R: 0, F: 0, A: 0, P: 0, totalRestanta: 0 };
-  document.getElementById('cas-debt-restante').textContent = formatMoney(totals.R) + ' RON';
-  const elFondRep = document.getElementById('cas-debt-fond-rep');
-  if (elFondRep) elFondRep.textContent = formatMoney(totals.F) + ' RON';
-  const elFondRul = document.getElementById('cas-debt-fond-rul');
-  if (elFondRul) elFondRul.textContent = formatMoney(totals.A) + ' RON';
-  document.getElementById('cas-debt-penalizari').textContent = formatMoney(totals.P) + ' RON';
-  document.getElementById('cas-debt-total').textContent = formatMoney(totals.totalRestanta) + ' RON';
+  const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  setTxt('cas-debt-regie', formatMoney(totals.R) + ' RON');
+  setTxt('cas-debt-rulment', formatMoney(totals.F) + ' RON');
+  setTxt('cas-debt-reparatii', formatMoney(totals.A) + ' RON');
+  setTxt('cas-debt-restante', formatMoney((totals.R || 0) + (totals.F || 0) + (totals.A || 0)) + ' RON');
+  setTxt('cas-debt-fond-rep', formatMoney(totals.F) + ' RON');
+  setTxt('cas-debt-fond-rul', formatMoney(totals.A) + ' RON');
+  setTxt('cas-debt-penalizari', formatMoney(totals.P) + ' RON');
+  setTxt('cas-debt-total', formatMoney(totals.totalRestanta) + ' RON');
 
   // Penalty preview box
-  const penPreview = ledger.penalties_preview || {};
+  const penPreview = ledger.penalties_preview || ledger.penaltiesPreview || {};
   const penText = document.getElementById('cas-penalty-preview-text');
   if (penText) {
     const calcPen = Number(penPreview.total_penalizare || 0);
@@ -2358,14 +2458,16 @@ async function onCasierieApartChange() {
   // Render cumulative datorii ledger rows
   renderCasierieLedgerRows();
 
-  debtBox.style.display = 'block';
+  if (debtBox) debtBox.style.display = 'block';
 
+  const sumaEl = document.getElementById('cas-suma');
+  const litEl = document.getElementById('cas-suma-litere');
   if (totals.totalRestanta > 0) {
-    document.getElementById('cas-suma').value = totals.totalRestanta.toFixed(2);
+    if (sumaEl) sumaEl.value = totals.totalRestanta.toFixed(2);
     updateSumaLiterePreview();
   } else {
-    document.getElementById('cas-suma').value = '';
-    document.getElementById('cas-suma-litere').textContent = 'Sold 0.00 RON';
+    if (sumaEl) sumaEl.value = '';
+    if (litEl) litEl.textContent = 'Sold 0.00 RON';
   }
 }
 
@@ -2373,7 +2475,8 @@ function renderCasierieLedgerRows() {
   const tbody = document.getElementById('tbl-casierie-ledger');
   if (!tbody || !currentCasierieLedger) return;
 
-  const isManual = document.querySelector('input[name="cas-mod-alocare"]:checked')?.value === 'manual';
+  const rawMode = (document.querySelector('input[name="cas-mod-alocare"]:checked')?.value || 'lump').toLowerCase();
+  const isManual = rawMode === 'manual';
   const rows = currentCasierieLedger.rows || [];
 
   if (rows.length === 0) {
@@ -2406,10 +2509,11 @@ function renderCasierieLedgerRows() {
 }
 
 function onChangeModAlocareCasierie() {
-  const mode = document.querySelector('input[name="cas-mod-alocare"]:checked')?.value || 'lump';
+  const rawMode = (document.querySelector('input[name="cas-mod-alocare"]:checked')?.value || 'lump').toLowerCase();
+  const isManual = rawMode === 'manual';
   const hint = document.getElementById('cas-alocare-hint');
   if (hint) {
-    hint.textContent = mode === 'manual'
+    hint.textContent = isManual
       ? 'Mod Manual activ: introduceți sumele dorite pe rândurile din tabelul de debite de mai sus.'
       : 'Ordine automată de stingere: Penalități (P) → Fond Rulment (A) → Fond Reparații (F) → Întreținere (R), începând cu cea mai veche lună.';
   }
@@ -2458,9 +2562,11 @@ async function emiteChitantaNoua() {
   if (!apId) return showAlert('Selectați apartamentul!', 'warning');
   if (!suma || suma <= 0) return showAlert('Introduceți suma încasată!', 'warning');
 
-  const mode = document.querySelector('input[name="cas-mod-alocare"]:checked')?.value || 'lump';
+  const rawMode = (document.querySelector('input[name="cas-mod-alocare"]:checked')?.value || 'lump').toLowerCase();
+  const isManual = rawMode === 'manual';
+  const mode = isManual ? 'manual' : 'lump';
   const allocations = [];
-  if (mode === 'manual') {
+  if (isManual) {
     document.querySelectorAll('.cas-manual-alloc-input').forEach(inp => {
       const s = parseFloat(inp.value) || 0;
       if (s > 0) {
@@ -2514,9 +2620,10 @@ async function emiteChitantaColectivaCHO() {
   const blocId = parseInt(document.getElementById('cho-bloc-select')?.value, 10);
   const categorie = document.getElementById('cho-categorie')?.value || 'F';
   const suma = parseFloat(document.getElementById('cho-suma')?.value);
-  const modDist = document.getElementById('cho-mod-distribuire')?.value || 'PROPORTIONAL_RESTANTA';
+  const modDist = document.getElementById('cho-mod')?.value || document.getElementById('cho-mod-distribuire')?.value || 'PER_APARTAMENT';
+  const sursa = document.getElementById('cho-sursa')?.value || 'CASA';
   const doc = document.getElementById('cho-document')?.value.trim() || '';
-  const expl = document.getElementById('cho-explicatie')?.value.trim() || 'Operațiune colectivă CHO';
+  const expl = document.getElementById('cho-lucrare')?.value.trim() || document.getElementById('cho-explicatie')?.value.trim() || 'Operațiune colectivă CHO';
   const dataDoc = document.getElementById('cho-data')?.value || new Date().toISOString().slice(0, 10);
 
   if (!blocId) return showAlert('Selectați blocul!', 'warning');
@@ -2527,6 +2634,7 @@ async function emiteChitantaColectivaCHO() {
     categorie,
     suma,
     mod_distribuire: modDist,
+    sursa,
     document: doc,
     explicatie: expl,
     data: dataDoc
@@ -2778,8 +2886,11 @@ async function loadRegistruPatrimoniu() {
   const tbody = document.getElementById('tbl-reg-patrimoniu') || document.getElementById('tbl-registru-patrimoniu');
   if (!tbody || !Array.isArray(rows)) return;
 
+  let totalActiv = 0, totalPasiv = 0;
   tbody.innerHTML = rows.map(r => {
     const isAct = (r.act_pas !== 'P');
+    if (isAct) totalActiv += Number(r.suma || 0);
+    else totalPasiv += Number(r.suma || 0);
     return `
       <tr>
         <td>#${r.id}</td>
@@ -2793,22 +2904,30 @@ async function loadRegistruPatrimoniu() {
       </tr>
     `;
   }).join('');
+
+  const badge = document.getElementById('patrimoniu-sold-badge');
+  if (badge) {
+    badge.textContent = `Activ: ${formatMoney(totalActiv)} RON | Pasiv: ${formatMoney(totalPasiv)} RON`;
+  }
 }
 
 async function addActPatrimoniu() {
   const payload = {
-    document: document.getElementById('patrim-doc')?.value.trim() || document.getElementById('reg-pat-doc')?.value.trim() || 'DOC-PATRIM',
-    data: document.getElementById('patrim-data')?.value || document.getElementById('reg-pat-data')?.value || new Date().toISOString().slice(0, 10),
-    act_pas: document.getElementById('patrim-act-pas')?.value || document.getElementById('reg-pat-actpas')?.value || 'A',
-    suma: parseFloat(document.getElementById('patrim-suma')?.value || document.getElementById('reg-pat-suma')?.value) || 0,
-    explicatie: document.getElementById('patrim-explicatie')?.value.trim() || document.getElementById('reg-pat-expl')?.value.trim() || 'Element patrimoniu',
-    perioada: document.getElementById('patrim-perioada')?.value.trim() || document.getElementById('reg-pat-per')?.value.trim() || '',
-    data_pres: document.getElementById('patrim-datapres')?.value || ''
+    document: document.getElementById('patr-doc')?.value.trim() || document.getElementById('patrim-doc')?.value.trim() || document.getElementById('reg-pat-doc')?.value.trim() || 'DOC-PATRIM',
+    data: document.getElementById('patr-data')?.value || document.getElementById('patrim-data')?.value || document.getElementById('reg-pat-data')?.value || new Date().toISOString().slice(0, 10),
+    act_pas: document.getElementById('patr-act-pas')?.value || document.getElementById('patrim-act-pas')?.value || document.getElementById('reg-pat-actpas')?.value || 'A',
+    suma: parseFloat(document.getElementById('patr-suma')?.value || document.getElementById('patrim-suma')?.value || document.getElementById('reg-pat-suma')?.value) || 0,
+    explicatie: document.getElementById('patr-explicatie')?.value.trim() || document.getElementById('patrim-explicatie')?.value.trim() || document.getElementById('reg-pat-expl')?.value.trim() || 'Element patrimoniu',
+    perioada: document.getElementById('patr-perioada')?.value.trim() || document.getElementById('patrim-perioada')?.value.trim() || document.getElementById('reg-pat-per')?.value.trim() || '',
+    data_pres: document.getElementById('patr-data-pres')?.value || document.getElementById('patrim-datapres')?.value || ''
   };
+  if (!payload.suma) return showAlert('Introduceți suma elementului patrimonial!', 'warning');
   const res = await apiPost('/api/operatiuni/patrimoniu', payload);
   if (res.error) return showAlert(res.error, 'danger');
-  const s1 = document.getElementById('patrim-suma'); if (s1) s1.value = '';
-  const s2 = document.getElementById('reg-pat-suma'); if (s2) s2.value = '';
+  ['patr-suma', 'patrim-suma', 'reg-pat-suma'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
   showAlert('Element patrimonial salvat (APA)!', 'success');
   loadRegistruPatrimoniu();
 }
@@ -2818,6 +2937,12 @@ async function deletePatrimoniuEntry(id) {
   await apiDelete(`/api/operatiuni/patrimoniu/${id}`);
   loadRegistruPatrimoniu();
 }
+
+function openReportDirect(code) {
+  switchMainSection('rapoarte');
+  selectReport(code);
+}
+window.openReportDirect = openReportDirect;
 
 // --- 4. ORDINE DE PLATA (ORD.PRG) ---
 async function loadRegistruOrdinePlata() {
@@ -2869,13 +2994,13 @@ async function deleteOrdinPlata(id) {
 }
 
 async function loadRawAuditTable() {
-  const tbl = document.getElementById('raw-audit-table-select')?.value || 'asociatie';
+  const tbl = document.getElementById('raw-table-select')?.value || document.getElementById('raw-audit-table-select')?.value || 'apartamente';
   const res = await apiGet(`/api/operatiuni/audit/raw/${tbl}?limit=250`);
   if (res.error) return showAlert(res.error, 'warning');
   rawAuditDataCache = res;
 
-  const thead = document.getElementById('thead-raw-audit');
-  const tbody = document.getElementById('tbody-raw-audit');
+  const thead = document.getElementById('thead-reg-raw') || document.getElementById('thead-raw-audit');
+  const tbody = document.getElementById('tbody-reg-raw') || document.getElementById('tbody-raw-audit');
   const rows = res.rows || [];
   if (rows.length === 0) {
     if (thead) thead.innerHTML = '';
@@ -3041,9 +3166,9 @@ const FOXPRO_58_OPERATIONS = [
   { code: 'ABA', cat: 'Actualizare (J)', title: 'Jurnal de Bancă — Depuneri și Viramente', action: () => { switchMainSection('registre'); switchRegistreTab('banca'); } },
   { code: 'ORD', cat: 'Actualizare (K)', title: 'Emitere Ordine de Plată Furnizori', action: () => { switchMainSection('registre'); switchRegistreTab('ordine'); } },
   { code: 'APA', cat: 'Actualizare (L)', title: 'Situația Elementelor Patrimoniale Activ / Pasiv', action: () => { switchMainSection('registre'); switchRegistreTab('patrimoniu'); } },
-  { code: 'AVS', cat: 'Actualizare (M)', title: 'Audit Date Brute Asociație (ASOC.DBF)', action: () => { switchMainSection('registre'); switchRegistreTab('raw'); } },
-  { code: 'AVB', cat: 'Actualizare (N)', title: 'Audit Date Brute Blocuri (BLOC.DBF)', action: () => { switchMainSection('registre'); switchRegistreTab('raw'); } },
-  { code: 'AVA', cat: 'Actualizare (O)', title: 'Audit Date Brute Apartamente (APART.DBF)', action: () => { switchMainSection('registre'); switchRegistreTab('raw'); } },
+  { code: 'AVS', cat: 'Actualizare (M)', title: 'Audit Date Brute Asociație (ASOC.DBF)', action: () => { switchMainSection('registre'); const sel = document.getElementById('raw-table-select'); if (sel) sel.value = 'asociatie'; switchRegistreTab('raw'); } },
+  { code: 'AVB', cat: 'Actualizare (N)', title: 'Audit Date Brute Blocuri (BLOC.DBF)', action: () => { switchMainSection('registre'); const sel = document.getElementById('raw-table-select'); if (sel) sel.value = 'blocuri'; switchRegistreTab('raw'); } },
+  { code: 'AVA', cat: 'Actualizare (O)', title: 'Audit Date Brute Apartamente (APART.DBF)', action: () => { switchMainSection('registre'); const sel = document.getElementById('raw-table-select'); if (sel) sel.value = 'apartamente'; switchRegistreTab('raw'); } },
   { code: 'SLU', cat: 'Actualizare (P)', title: 'Sfârșit de Lună — Închidere Lună & Rotire Indecși (IN -> IV)', action: () => switchMainSection('luna') },
 
   // CALCUL (A-E)
@@ -3164,6 +3289,7 @@ function handleCommandPaletteKey(e) {
     executeCommandPaletteItem(cmdPaletteSelectedIndex);
   }
 }
+window.onCommandPaletteKeyDown = handleCommandPaletteKey;
 
 function executeCommandPaletteItem(idx) {
   const item = cmdPaletteFilteredItems[idx];
@@ -3493,244 +3619,3 @@ function printAdeverinta() {
   }
 }
 
-
-// ============================================================
-//  RAPOARTE: OPTIUNI INTERACTIVE PENTRU ADU, LSC, COM
-// ============================================================
-function renderReportCustomOptions(code) {
-  const box = document.getElementById('rapoarte-custom-options');
-  if (!box) return;
-
-  if (code === 'ADU') {
-    box.style.display = 'block';
-    box.innerHTML = `
-      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
-        📋 Parametri Convocator Adunare Generală (FoxPro: ADU.PRG)
-      </div>
-      <div class="form-row">
-        <div class="form-group" style="flex:2;">
-          <label class="form-label">Ce se convoacă? (CECONV)</label>
-          <input type="text" class="form-input" id="adu-ceconv" value="ADUNAREA GENERALA A ASOCIATIEI DE PROPRIETARI">
-        </div>
-        <div class="form-group" style="flex:1;">
-          <label class="form-label">Când? (CAND)</label>
-          <input type="text" class="form-input" id="adu-cand" value="25 Noiembrie 2026, ora 18:00">
-        </div>
-        <div class="form-group" style="flex:1.5;">
-          <label class="form-label">Unde? (UNDE)</label>
-          <input type="text" class="form-input" id="adu-unde" value="Holul blocului / Sediul Asociației">
-        </div>
-      </div>
-      <div style="font-size:0.82rem; font-weight:600; margin:0.4rem 0 0.2rem 0; color:#475569;">Ordinea de zi (5 Puncte):</div>
-      <div class="form-row">
-        <div class="form-group" style="flex:1;"><input type="text" class="form-input" id="adu-ord1" value="1. Prezentarea și aprobarea raportului financiar-contabil."></div>
-        <div class="form-group" style="flex:1;"><input type="text" class="form-input" id="adu-ord2" value="2. Aprobarea bugetului de venituri și a fondului de reparații."></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group" style="flex:1;"><input type="text" class="form-input" id="adu-ord3" value="3. Analiza situației restanțierilor și măsuri de recuperare."></div>
-        <div class="form-group" style="flex:1;"><input type="text" class="form-input" id="adu-ord4" value="4. Lucrări prioritare de întreținere și reparații spații comune."></div>
-      </div>
-      <div class="form-row" style="align-items:flex-end;">
-        <div class="form-group" style="flex:2;"><input type="text" class="form-input" id="adu-ord5" value="5. Diverse și propuneri ale proprietarilor."></div>
-        <div class="form-group">
-          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează Convocator</button>
-        </div>
-      </div>
-    `;
-  } else if (code === 'LSC') {
-    box.style.display = 'block';
-    const nextDate = new Date();
-    nextDate.setDate(nextDate.getDate() + 15);
-    const dateStr = nextDate.toISOString().slice(0, 10);
-    box.innerHTML = `
-      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
-        ⚖️ Parametri Scrisori Somație Restanțieri (FoxPro: LSC.PRG)
-      </div>
-      <div class="form-row" style="align-items:flex-end;">
-        <div class="form-group" style="min-width:200px;">
-          <label class="form-label">Termen Limită de Plată / Data Sistării (DATAS)</label>
-          <input type="date" class="form-input" id="lsc-datas" value="${dateStr}">
-        </div>
-        <div class="form-group">
-          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Actualizează Somațiile</button>
-        </div>
-      </div>
-    `;
-  } else if (code === 'COM') {
-    box.style.display = 'block';
-    box.innerHTML = `
-      <div style="font-weight:700; margin-bottom:0.5rem; color:#1e293b;">
-        📊 Parametri Comparație cu Lună de Referință (FoxPro: COM.PRG)
-      </div>
-      <div class="form-row" style="align-items:flex-end;">
-        <div class="form-group" style="min-width:140px;">
-          <label class="form-label">An Referință</label>
-          <input type="number" class="form-input" id="com-ref-an" value="2026">
-        </div>
-        <div class="form-group" style="min-width:160px;">
-          <label class="form-label">Lună Referință</label>
-          <select class="form-select" id="com-ref-luna">
-            <option value="1">1 - Ianuarie</option>
-            <option value="2">2 - Februarie</option>
-            <option value="3">3 - Martie</option>
-            <option value="4">4 - Aprilie</option>
-            <option value="5">5 - Mai</option>
-            <option value="6">6 - Iunie</option>
-            <option value="7">7 - Iulie</option>
-            <option value="8" selected>8 - August</option>
-            <option value="9">9 - Septembrie</option>
-            <option value="10">10 - Octombrie</option>
-            <option value="11">11 - Noiembrie</option>
-            <option value="12">12 - Decembrie</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <button class="btn btn-primary" onclick="reloadCurrentReport()">🔄 Compară Valorile</button>
-        </div>
-      </div>
-    `;
-  } else {
-    box.style.display = 'none';
-  }
-}
-
-// ============================================================
-//  ADEVERINȚĂ PLATĂ LA ZI / VÂNZARE APARTAMENT (ADE.PRG)
-// ============================================================
-let currentAdeverintaData = null;
-
-function openAdeverintaFromCasierie() {
-  const selApt = document.getElementById('cas-apart-select')?.value;
-  if (!selApt) {
-    return showAlert('Vă rugăm să selectați mai întâi un apartament din lista de mai sus!', 'warning');
-  }
-  openAdeverintaModal(selApt);
-}
-
-async function openAdeverintaModal(apartamentId) {
-  const aptId = apartamentId || document.getElementById('cas-apart-select')?.value || 1;
-  const dataInr = new Date().toISOString().slice(0, 10);
-  const adeDateInput = document.getElementById('ade-data-inr');
-  if (adeDateInput) adeDateInput.value = dataInr;
-
-  const res = await apiGet(`/api/operatiuni/apartamente/${aptId}/adeverinta?data_inr=${dataInr}`);
-  if (!res || !res.adeverinta) {
-    return showAlert('Nu s-au putut încărca datele pentru adeverință.', 'danger');
-  }
-
-  currentAdeverintaData = res.adeverinta;
-  const nrInput = document.getElementById('ade-nr-inr');
-  if (nrInput) nrInput.value = currentAdeverintaData.numar_inregistrare || 1;
-  const servInput = document.getElementById('ade-serv');
-  if (servInput) servInput.value = currentAdeverintaData.serviciu || 'NOTAR PUBLIC, VANZARE APARTAMENT';
-
-  renderAdeverintaContent(currentAdeverintaData);
-  showModal('modal-adeverinta');
-}
-
-async function regenerareAdeverintaCuParametri() {
-  if (!currentAdeverintaData?.apartament?.id) return;
-  const aptId = currentAdeverintaData.apartament.id;
-  const nrInr = document.getElementById('ade-nr-inr')?.value || 1;
-  const dataInr = document.getElementById('ade-data-inr')?.value || new Date().toISOString().slice(0, 10);
-  const serv = document.getElementById('ade-serv')?.value || 'NOTAR PUBLIC, VANZARE APARTAMENT';
-
-  const res = await apiGet(`/api/operatiuni/apartamente/${aptId}/adeverinta?nr_inr=${nrInr}&data_inr=${dataInr}&serv=${encodeURIComponent(serv)}`);
-  if (!res || !res.adeverinta) return showAlert('Eroare la reîncărcarea adeverinței.', 'danger');
-
-  currentAdeverintaData = res.adeverinta;
-  renderAdeverintaContent(currentAdeverintaData);
-  showAlert('Adeverința a fost actualizată!', 'success');
-}
-
-function renderAdeverintaContent(adv) {
-  const container = document.getElementById('adeverinta-preview-content');
-  if (!container || !adv) return;
-
-  const a = adv.asociatie;
-  const ap = adv.apartament;
-  const d = adv.defalcare_datorii;
-
-  container.innerHTML = `
-    <div style="font-family:'Times New Roman', Times, serif; color:#0f172a; padding:2rem 2.5rem; line-height:1.6; font-size:1.05rem;">
-      <div style="display:flex; justify-content:space-between; border-bottom:2px solid #0f172a; padding-bottom:0.75rem; margin-bottom:1.5rem;">
-        <div>
-          <strong style="font-size:1.15rem;">ASOCIAȚIA DE PROPRIETARI "${a.nume}"</strong><br>
-          <span>Cod Fiscal / C.I.F.: ${a.cod_fiscal || '-'}</span><br>
-          <span>Sediul: ${a.adresa || '-'}, ${a.oras || 'Alba Iulia'}</span><br>
-          <span>Banca: ${a.banca || '-'} | Cont IBAN: ${a.cont_bancar || '-'}</span>
-        </div>
-        <div style="text-align:right;">
-          <span style="font-size:0.9rem;">Evidență Financiară / Notar</span><br>
-          <strong style="font-size:1.1rem;">Nr. ${adv.numar_inregistrare} / ${adv.data_inregistrarii}</strong>
-        </div>
-      </div>
-
-      <div style="text-align:center; margin:2.5rem 0 1.5rem 0;">
-        <h2 style="margin:0; letter-spacing:2px; font-size:1.65rem; text-decoration:underline;">A D E V E R I N Ț Ă</h2>
-        <span style="font-size:0.9rem; font-style:italic;">(privind situația debitelor la cotele de întreținere și fonduri)</span>
-      </div>
-
-      <p style="text-indent:2.5rem; text-align:justify; margin-bottom:1.2rem;">
-        ${adv.text_adeverinta}
-      </p>
-
-      ${adv.are_datorii ? `
-        <div style="margin:1rem 0; border:1px solid #cbd5e1; background:#f8fafc; padding:0.85rem; border-radius:4px;">
-          <strong>Situația debitelor defalcate la data de ${adv.data_inregistrarii}:</strong>
-          <table style="width:100%; border-collapse:collapse; margin-top:0.5rem; font-size:0.95rem;">
-            <tr><td style="padding:4px;">1. Întreținere / Regie (R):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.intretinere_regie)} RON</td></tr>
-            <tr><td style="padding:4px;">2. Fond de Rulment (F):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.fond_rulment)} RON</td></tr>
-            <tr><td style="padding:4px;">3. Fond de Reparații (A):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.fond_reparatii)} RON</td></tr>
-            <tr><td style="padding:4px;">4. Penalități de întârziere:</td><td style="text-align:right; font-weight:700;">${formatMoney(d.penalitati_inregistrate + d.penalitati_calculate)} RON</td></tr>
-            <tr style="border-top:1px solid #94a3b8; font-weight:700;"><td style="padding:4px;">TOTAL GENERAL DATORAT:</td><td style="text-align:right; color:#dc2626;">${formatMoney(d.total_datorat)} RON</td></tr>
-          </table>
-        </div>
-      ` : ''}
-
-      <p style="text-indent:2.5rem; text-align:justify; margin-top:1.5rem;">
-        ${adv.scop}
-      </p>
-
-      <div style="display:flex; justify-content:space-between; margin-top:4rem; padding:0 2rem;">
-        <div style="text-align:center;">
-          <strong>PREȘEDINTE,</strong><br><br><br>
-          <span>${a.presedinte}</span><br>
-          <small>(semnătura și ștampila)</small>
-        </div>
-        <div style="text-align:center;">
-          <strong>ADMINISTRATOR,</strong><br><br><br>
-          <span>${a.administrator}</span><br>
-          <small>(semnătura)</small>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function printAdeverinta() {
-  const printContent = document.getElementById('adeverinta-preview-content')?.innerHTML;
-  if (!printContent) return;
-  const printWindow = window.open('', '_blank', 'width=850,height=900');
-  if (printWindow) {
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Adeverinta Plata la Zi - ${currentAdeverintaData?.apartament?.proprietar || ''}</title>
-        <style>
-          body { font-family: 'Times New Roman', Times, serif; margin: 2cm; color: #000; }
-          @media print { body { margin: 1.5cm; } }
-        </style>
-      </head>
-      <body>
-        ${printContent}
-        <script>window.onload = function() { window.print(); window.close(); }<\/script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-  } else {
-    window.print();
-  }
-}

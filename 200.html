@@ -127,14 +127,17 @@
       <!-- SIDEBAR BLOCURI -->
       <aside class="sidebar">
         <div class="sidebar-header">
-          <h2 onclick="showDashboard()" style="cursor:pointer;" title="Mergi la Panoul Principal">🏠 Panou & Lista Blocurilor</h2>
-          <p id="sidebar-asociatie-name">TEST ADMINISTRATORI</p>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+            <h2 onclick="showDashboard()" style="cursor:pointer; font-size:1.02rem; margin:0;" title="Mergi la Panoul Principal">🏠 Panou & Blocuri</h2>
+            <button class="btn btn-small btn-primary" onclick="showAddBlocModal()" style="padding:0.25rem 0.55rem; font-size:0.76rem; background:#2563eb; border-color:#60a5fa; white-space:nowrap;" title="Adaugă Bloc Nou">+ Adaugă Bloc</button>
+          </div>
+          <p id="sidebar-asociatie-name" style="font-size:0.78rem; color:#9fa8da; margin:0;">TEST ADMINISTRATORI</p>
         </div>
         <div class="bloc-list" id="bloc-list">
           <!-- Populat din JS -->
         </div>
         <div class="sidebar-footer">
-          <button class="add-bloc-btn" onclick="showAddBlocModal()">+ Adaugă Bloc</button>
+          <button class="add-bloc-btn" id="btn-sidebar-add-bloc" onclick="showAddBlocModal()">+ Adaugă Bloc</button>
         </div>
       </aside>
 
@@ -864,7 +867,8 @@
             <p class="page-header-subtitle">Echivalent FoxPro: [Centralizare -> A) TAIE CHITANTE INDIVIDUALE (CHI.PRG) & B) CHITANTE COLECTIVE / DESCARCARE FOND (CHO.FXP)]</p>
           </div>
           <div class="page-header-actions">
-            <button class="btn btn-primary" id="btn-open-ade" onclick="openAdeverintaFromCasierie()">?? Adeverin?a Vnzare (ADE)</button>`n            <button class="btn btn-warning" id="btn-open-cho" onclick="showModal('modal-chitanta-colectiva')">🏢 Chitanță Colectivă / Descărcare Fond (CHO)</button>
+            <button class="btn btn-primary" id="btn-open-ade" onclick="openAdeverintaFromCasierie()">📄 Adeverință Vânzare (ADE)</button>
+            <button class="btn btn-warning" id="btn-open-cho" onclick="showChitantaColectivaModal()">🏢 Chitanță Colectivă / Descărcare Fond (CHO)</button>
             <button class="btn btn-secondary" onclick="loadChitante()">🔄 Reîmprospătează Jurnal</button>
           </div>
         </div>
@@ -1005,7 +1009,7 @@
               </div>
 
               <div style="margin-top: 1.25rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
-                <button class="btn btn-warning btn-small" onclick="showModal('modal-chitanta-colectiva')">
+                <button class="btn btn-warning btn-small" onclick="showChitantaColectivaModal()">
                   🏢 Deschide Chitanță Colectivă / Descărcare Fond (CHO)
                 </button>
                 <button class="btn btn-primary" onclick="emiteChitantaNoua()" style="padding:0.75rem 1.5rem; font-size:1rem;">
@@ -1069,7 +1073,12 @@
               <input type="text" class="form-input" id="rapoarte-search-input" placeholder="🔍 Caută raport (ex: LAR, RE1, SBL, CCA)..." oninput="filterReportCatalogSidebar(this.value)">
             </div>
             <div class="rapoarte-catalog-list" id="rapoarte-catalog-list">
-              <!-- Populat din JS: Listare (16), Situatii (17), Centralizare (2) -->
+              <div class="catalog-group-header">📋 Listare (16 Rapoarte A–P)</div>
+              <div class="catalog-items-list" id="catalog-listare-items"></div>
+              <div class="catalog-group-header" style="margin-top:0.65rem;">📈 Situații (17 Rapoarte A–Q)</div>
+              <div class="catalog-items-list" id="catalog-situatii-items"></div>
+              <div class="catalog-group-header" style="margin-top:0.65rem;">🏛️ Centralizare (IN1 / IN2)</div>
+              <div class="catalog-items-list" id="catalog-centralizare-items"></div>
             </div>
           </aside>
 
@@ -1108,11 +1117,27 @@
               </div>
             </div>
 
-            <div id="rapoarte-custom-options" style="display:none; margin-top:0.75rem; padding:0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;"></div>`n`n            <!-- Card Raport Printabil -->
+            <div id="rapoarte-custom-options" style="display:none; margin-top:0.75rem; padding:0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;"></div>
+
+            <!-- Card Raport Printabil -->
             <div class="card printable-card" id="printable-raport">
               <div class="card-body">
                 <div class="avizier-header-box" id="raport-header-box">
-                  <!-- Populat din JS -->
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
+                    <div>
+                      <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <span class="badge badge-primary" id="raport-active-code">LAF</span>
+                        <span class="badge badge-info" id="raport-orientation-badge">A4 PORTRAIT</span>
+                      </div>
+                      <h2 id="raport-active-title" style="margin:0.35rem 0 0.15rem 0; font-size:1.2rem;">Listă de Plată Avizier</h2>
+                      <p id="raport-active-meta" style="margin:0; font-size:0.82rem; color:#475569;"></p>
+                    </div>
+                    <div style="text-align:right; font-size:0.85rem;">
+                      <strong id="raport-print-title"></strong><br>
+                      <span id="raport-print-subtitle"></span><br>
+                      <span id="raport-print-meta"></span>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="table-container" style="overflow-x:auto;">
@@ -1934,13 +1959,40 @@
 
   <!-- MODAL: Date Generale Perioadă (ADG) -->
   <div class="modal-overlay" id="modal-date-generale" style="display:none;">
-    <div class="modal" style="max-width: 520px; border-top: 4px solid #0284c7;">
+    <div class="modal" style="max-width: 540px; border-top: 4px solid #0284c7;">
       <div class="modal-header">
         <h3>⚙️ Actualizare Date Generale Lună (FoxPro: ADG.PRG)</h3>
         <button class="modal-close" onclick="closeModal('modal-date-generale')">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="adg-perioada-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Anul (AN) *</label>
+            <input type="number" class="form-input" id="adg-an" value="2026" min="2000" max="2099">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Luna (LUNA) *</label>
+            <select class="form-select" id="adg-luna">
+              <option value="1">1 — Ianuarie</option>
+              <option value="2">2 — Februarie</option>
+              <option value="3">3 — Martie</option>
+              <option value="4">4 — Aprilie</option>
+              <option value="5">5 — Mai</option>
+              <option value="6">6 — Iunie</option>
+              <option value="7">7 — Iulie</option>
+              <option value="8">8 — August</option>
+              <option value="9">9 — Septembrie</option>
+              <option value="10">10 — Octombrie</option>
+              <option value="11">11 — Noiembrie</option>
+              <option value="12">12 — Decembrie</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Stare Perioadă</label>
+            <input type="text" class="form-input" id="adg-status" value="DESCHISA" readonly>
+          </div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Ultima Zi a Lunii (ULTIMA_ZI) *</label>
@@ -2038,6 +2090,10 @@
             <label class="form-label">Fond Rulment (RULMENT)</label>
             <input type="number" class="form-input" id="ada-rulment" step="0.01">
           </div>
+          <div class="form-group">
+            <label class="form-label">Cotă Fond Reparații (COTA_FR)</label>
+            <input type="number" class="form-input" id="ada-cota-fr" step="0.01">
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -2119,8 +2175,127 @@
         <h3 id="modal-ap-extins-title">🔧 Configurare Extinsă Apartament (ARA / APS / ADC)</h3>
         <button class="modal-close" onclick="closeModal('modal-apartament-extins')">&times;</button>
       </div>
-      <div class="modal-body" id="modal-ap-extins-body">
-        <!-- Populat dinamic din JS -->
+      <div class="modal-body" id="modal-ap-extins-body" style="max-height:72vh; overflow-y:auto;">
+        <input type="hidden" id="ext-ap-id">
+        <div id="ext-ap-title" style="font-weight:700; color:#1e40af; margin-bottom:0.75rem; font-size:1rem;"></div>
+
+        <h4 style="margin:0.5rem 0; font-size:0.92rem; color:#334155;">🔥 1. Repartitoare Căldură R1..R7 (FoxPro: ARA.PRG / CRE.PRG)</h4>
+        <div class="table-container" style="margin-bottom:1rem;">
+          <table class="table-compact">
+            <thead>
+              <tr>
+                <th>Repartitor</th>
+                <th>Serie</th>
+                <th>Index Vechi</th>
+                <th>Index Nou</th>
+                <th>Factor Termic</th>
+                <th>Coef. Spațiu</th>
+                <th>Unități Calc.</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-modal-r1-r7"></tbody>
+          </table>
+        </div>
+
+        <h4 style="margin:0.75rem 0 0.5rem 0; font-size:0.92rem; color:#334155;">💧 2. Serii Apometre & Expirare Metrologică (D_V_AR / D_V_AC)</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Serie AR Bucătărie</label>
+            <input type="text" class="form-input" id="ext-ser-ar-bu">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Exp. AR Bucătărie</label>
+            <input type="date" class="form-input" id="ext-dv-ar-bu">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Serie AR Baie 1</label>
+            <input type="text" class="form-input" id="ext-ser-ar-ba1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Exp. AR Baie 1</label>
+            <input type="date" class="form-input" id="ext-dv-ar-ba1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Serie AR Baie 2</label>
+            <input type="text" class="form-input" id="ext-ser-ar-ba2">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Exp. AR Baie 2</label>
+            <input type="date" class="form-input" id="ext-dv-ar-ba2">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Serie AC Bucătărie</label>
+            <input type="text" class="form-input" id="ext-ser-ac-bu">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Exp. AC Bucătărie</label>
+            <input type="date" class="form-input" id="ext-dv-ac-bu">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Serie AC Baie 1</label>
+            <input type="text" class="form-input" id="ext-ser-ac-ba1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Exp. AC Baie 1</label>
+            <input type="date" class="form-input" id="ext-dv-ac-ba1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Serie AC Baie 2</label>
+            <input type="text" class="form-input" id="ext-ser-ac-ba2">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Exp. AC Baie 2</label>
+            <input type="date" class="form-input" id="ext-dv-ac-ba2">
+          </div>
+        </div>
+
+        <h4 style="margin:0.75rem 0 0.5rem 0; font-size:0.92rem; color:#334155;">💰 3. Fond Rulment, Fond Reparații & Sume Manuale (FoxPro: ADC.PRG)</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Plafon Fond Rulment (MAX_FR)</label>
+            <input type="number" class="form-input" id="ext-max-fr" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rulment Calculat (CALC_FR)</label>
+            <input type="number" class="form-input" id="ext-calc-fr" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rulment Achitat (PLAT_FR)</label>
+            <input type="number" class="form-input" id="ext-plat-fr" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rulment Lună Crt. (RULMENT)</label>
+            <input type="number" class="form-input" id="ext-rulment" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fond Reparații (FOND_REPAR)</label>
+            <input type="number" class="form-input" id="ext-fond-repar" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Reparații Curente (REPAR_CRT)</label>
+            <input type="number" class="form-input" id="ext-repar-crt" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Chelt. Boxă (CH_BOX)</label>
+            <input type="number" class="form-input" id="ext-ch-box" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Chelt. Avarie (CH_HAV)</label>
+            <input type="number" class="form-input" id="ext-ch-hav" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Altele (ALTELE)</label>
+            <input type="number" class="form-input" id="ext-altele" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ajustare Încălzire (I)</label>
+            <input type="number" class="form-input" id="ext-i-ajust" step="0.01">
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn" onclick="closeModal('modal-apartament-extins')">Închide</button>
@@ -2531,25 +2706,25 @@
   <div class="modal-overlay" id="modal-adeverinta" style="display:none;">
     <div class="modal modal-lg" style="max-width: 820px; border-top: 4px solid #2563eb;">
       <div class="modal-header">
-        <h3 id="modal-adeverinta-title">?? Adeverin?a Plata la Zi / Notar Vnzare (ADE.PRG)</h3>
+        <h3 id="modal-adeverinta-title">📄 Adeverință Plată la Zi / Notar Vânzare (ADE.PRG)</h3>
         <button class="modal-close" onclick="closeModal('modal-adeverinta')">&times;</button>
       </div>
       <div class="modal-body">
         <div class="form-row" style="background:#f1f5f9; padding:0.75rem; border-radius:6px; margin-bottom:1rem; align-items:flex-end;">
           <div class="form-group" style="min-width:140px;">
-            <label class="form-label">Nr. Inregistrare</label>
+            <label class="form-label">Nr. Înregistrare</label>
             <input type="number" class="form-input" id="ade-nr-inr" value="1">
           </div>
           <div class="form-group" style="min-width:140px;">
-            <label class="form-label">Data Inregistrarii</label>
+            <label class="form-label">Data Înregistrării</label>
             <input type="date" class="form-input" id="ade-data-inr">
           </div>
           <div class="form-group" style="flex:2; min-width:260px;">
-            <label class="form-label">La ce serve?te? (Scop / Destina?ie)</label>
+            <label class="form-label">La ce servește? (Scop / Destinație)</label>
             <input type="text" class="form-input" id="ade-serv" value="NOTAR PUBLIC, VANZARE APARTAMENT">
           </div>
           <div class="form-group">
-            <button class="btn btn-secondary" onclick="regenerareAdeverintaCuParametri()">?? Actualizeaza</button>
+            <button class="btn btn-secondary" onclick="regenerareAdeverintaCuParametri()">🔄 Actualizează</button>
           </div>
         </div>
 
@@ -2558,8 +2733,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn" onclick="closeModal('modal-adeverinta')">Inchide</button>
-        <button class="btn btn-primary" onclick="printAdeverinta()">?? Tipare?te Adeverin?a (A4)</button>
+        <button class="btn" onclick="closeModal('modal-adeverinta')">Închide</button>
+        <button class="btn btn-primary" onclick="printAdeverinta()">🖨️ Tipărește Adeverința (A4)</button>
       </div>
     </div>
   </div>
