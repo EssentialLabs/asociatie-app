@@ -55,3 +55,46 @@ Implement a pure, unit-testable calculation engine matching FoxPro's exact round
 
 ### Complete Feature & Report Verification
 - [ ] Automated API verification test confirms all 16 `Listare` endpoints, 17 `Situații` endpoints, `Centralizare` (`CHI`, `CHO`, `IN1`, `IN2`), `Actualizare` (`ADG`, `ADA`, `ADB`, `APS`, `AIA`, `ARA`, `ACA`, `ABA`, `APA`, `ORD`, `SAL`), and GDPR name-toggle on notice-board lists return HTTP 200 with valid structured payloads and zero runtime errors.
+
+
+## Follow-up — 2026-10-19T11:18:04Z
+
+This is a single self-contained fix; keep it small and focused. Upgrade the Asociatie App frontend interface with fully responsive styling and UX optimized for mobile phones (320px–480px), tablets (768px–1024px), and compact laptop screens, featuring a slide-out off-canvas drawer navigation with backdrop, fluid financial cards and responsive tables, touch-friendly form controls, and mobile-scaled modal dialogs.
+
+Working directory: G:\asociatie-app
+Integrity mode: development
+
+## Requirements
+
+### R1. Responsive Navigation & Header Layout
+Implement a responsive mobile navigation drawer with a hamburger menu button visible on screens narrower than 768px and hidden on desktop viewports. Opening the menu slides an off-canvas navigation drawer over the screen with a darkened backdrop overlay, and tapping the backdrop or any navigation item closes the drawer. The top header elements must wrap smoothly without truncation or horizontal overflow.
+
+### R2. Responsive Data Display (Tables, Grids, Stat Cards)
+Optimize financial tables, apartment registers, and dashboard cards across mobile and tablet viewports. Dense multi-column tables must sit inside horizontally scrollable containers with smooth touch scrolling and clear scroll boundary cues without breaking overall page width. Stat cards and dashboard summaries must auto-fit available screen width.
+
+### R3. Mobile-First Modals & Touch Targets
+Ensure all modal dialogs (cashier receipt forms, debt editing, apartment details, print previews) scale gracefully on mobile viewports up to 95vw with scrollable bodies and easily tappable close buttons. All interactive buttons, form selects, and input fields must satisfy minimum touch target guidelines (min 42–44px height).
+
+### R4. Zero Desktop Regressions & Test Integrity
+Maintain 100% fidelity on desktop displays (>=992px) and ensure all existing automated tests continue to pass without layout or functional regression.
+
+## Acceptance Criteria
+
+### Navigation & Layout
+- [ ] Viewport `<meta name="viewport">` properly configured with touch scale handling.
+- [ ] On viewports <768px, sidebar converts to an off-canvas drawer sliding in smoothly, accompanied by a dim backdrop.
+- [ ] Clicking the backdrop, close toggle, or any navigation item closes the drawer.
+- [ ] Top navigation bar components wrap cleanly on mobile screens without horizontal page overflow.
+
+### Data Tables & Forms
+- [ ] Wide accounting tables scroll horizontally within their containers without expanding the page body width.
+- [ ] Stat cards reflow responsively on 320px, 375px, 768px, and 1024px viewports.
+- [ ] Interactive buttons, form inputs, and selects provide comfortable mobile touch heights (≥42px on mobile).
+
+### Modals
+- [ ] Modal dialogs resize to 95vw on screens <768px, stay centered, and allow internal scrolling when content exceeds viewport height.
+- [ ] Modal header close buttons are easily accessible on touchscreen devices.
+
+### Automated Verification
+- [ ] All 16 existing automated test suites pass cleanly (`npm test`).
+- [ ] Automated responsive E2E tests confirm mobile toggle visibility, drawer opening/closing state classes, and table overflow constraints across mobile and tablet dimensions.

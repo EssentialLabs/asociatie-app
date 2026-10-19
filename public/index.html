@@ -2,11 +2,11 @@
 <html lang="ro">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Aplicație Asociație de Proprietari — Sistem Administrare</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-active-section="blocuri">
 
   <!-- BANNER IMPERSONARE SUPERADMIN (PRETENDER) -->
   <div id="impersonation-banner" class="impersonation-banner" style="display:none;">
@@ -18,6 +18,11 @@
 
   <!-- TOP HEADER & MAIN NAVIGATION -->
   <header class="top-nav">
+    <button class="mobile-nav-toggle" id="mobile-nav-toggle" onclick="toggleMobileSidebar()" aria-label="Deschide Meniu Navigare" aria-expanded="false" title="Deschide Meniu">
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+    </button>
     <div class="top-nav-brand">
       <span class="brand-icon">🏢</span>
       <div class="brand-info">
@@ -119,28 +124,60 @@
 
   <div class="app-container">
 
+    <!-- BACKDROP PENTRU MOBIL OFF-CANVAS DRAWER -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="toggleMobileSidebar(false)"></div>
+
+    <!-- SIDEBAR BLOCURI & DRAWER MOBIL -->
+    <aside class="sidebar" id="sidebar-blocuri">
+      <div class="sidebar-header">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+          <h2 onclick="showDashboard()" style="cursor:pointer; font-size:1.02rem; margin:0;" title="Mergi la Panoul Principal">🏠 Panou & Blocuri</h2>
+          <div style="display:flex; align-items:center; gap:0.4rem;">
+            <button class="btn btn-small btn-primary" onclick="showAddBlocModal()" style="padding:0.25rem 0.55rem; font-size:0.76rem; background:#2563eb; border-color:#60a5fa; white-space:nowrap;" title="Adaugă Bloc Nou">+ Adaugă Bloc</button>
+            <button class="sidebar-close-btn" id="sidebar-close-btn" onclick="toggleMobileSidebar(false)" aria-label="Închide meniu" title="Închide">✕</button>
+          </div>
+        </div>
+        <p id="sidebar-asociatie-name" style="font-size:0.78rem; color:#9fa8da; margin:0;">TEST ADMINISTRATORI</p>
+        <nav class="sidebar-mobile-nav" id="sidebar-mobile-nav">
+          <button class="sidebar-nav-btn active" id="side-nav-blocuri" onclick="switchMainSection('blocuri')">
+            <span class="nav-icon">🏢</span> Administrare Blocuri
+          </button>
+          <button class="sidebar-nav-btn" id="side-nav-avizier" onclick="switchMainSection('avizier')">
+            <span class="nav-icon">📋</span> Avizier / Listă Plată
+          </button>
+          <button class="sidebar-nav-btn" id="side-nav-casierie" onclick="switchMainSection('casierie')">
+            <span class="nav-icon">🧾</span> Casierie & Chitanțe
+          </button>
+          <button class="sidebar-nav-btn" id="side-nav-rapoarte" onclick="switchMainSection('rapoarte')">
+            <span class="nav-icon">📊</span> Rapoarte (35)
+          </button>
+          <button class="sidebar-nav-btn" id="side-nav-registre" onclick="switchMainSection('registre')">
+            <span class="nav-icon">📒</span> Registre Financiare
+          </button>
+          <button class="sidebar-nav-btn" id="side-nav-luna" onclick="switchMainSection('luna')">
+            <span class="nav-icon">📅</span> Sfârșit de Lună
+          </button>
+          <button class="sidebar-nav-btn" id="side-nav-ghid" onclick="switchMainSection('ghid')">
+            <span class="nav-icon">📖</span> Ghid FoxPro → Web
+          </button>
+          <button class="sidebar-nav-btn" id="side-nav-control-tower" onclick="switchMainSection('control-tower')" style="display:none;">
+            <span class="nav-icon">🎮</span> Turn de Control
+          </button>
+        </nav>
+      </div>
+      <div class="bloc-list" id="bloc-list">
+        <!-- Populat din JS -->
+      </div>
+      <div class="sidebar-footer">
+        <button class="add-bloc-btn" id="btn-sidebar-add-bloc" onclick="showAddBlocModal()">+ Adaugă Bloc</button>
+      </div>
+    </aside>
+
     <!-- ======================================================== -->
     <!-- SECȚIUNEA 1: ADMINISTRARE BLOCURI & FACTURI               -->
     <!-- ======================================================== -->
     <div class="main-section active" id="sec-blocuri">
       <div id="view-blocuri" style="display:flex; width:100%;">
-      <!-- SIDEBAR BLOCURI -->
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
-            <h2 onclick="showDashboard()" style="cursor:pointer; font-size:1.02rem; margin:0;" title="Mergi la Panoul Principal">🏠 Panou & Blocuri</h2>
-            <button class="btn btn-small btn-primary" onclick="showAddBlocModal()" style="padding:0.25rem 0.55rem; font-size:0.76rem; background:#2563eb; border-color:#60a5fa; white-space:nowrap;" title="Adaugă Bloc Nou">+ Adaugă Bloc</button>
-          </div>
-          <p id="sidebar-asociatie-name" style="font-size:0.78rem; color:#9fa8da; margin:0;">TEST ADMINISTRATORI</p>
-        </div>
-        <div class="bloc-list" id="bloc-list">
-          <!-- Populat din JS -->
-        </div>
-        <div class="sidebar-footer">
-          <button class="add-bloc-btn" id="btn-sidebar-add-bloc" onclick="showAddBlocModal()">+ Adaugă Bloc</button>
-        </div>
-      </aside>
-
       <!-- MAIN CONTENT BLOC -->
       <main class="main-content" id="main-content">
         <!-- Default: Dashboard -->
@@ -2023,7 +2060,7 @@
       <div class="modal-header" style="padding: 1rem 1.25rem; background:#f8fafc;">
         <div style="display:flex; align-items:center; gap:0.75rem; width:100%;">
           <span style="font-size:1.3rem;">🔍</span>
-          <input type="text" class="form-input" id="cmd-palette-input" placeholder="Tastați orice cod FoxPro (LAR, LAF, CHI, CHO, SUM, TCE, CRE, TRE, GOL, SLU, RE1, SBL, CCA...)" oninput="renderCommandPaletteResults(this.value)" onkeydown="onCommandPaletteKeyDown(event)" autocomplete="off" style="font-size:1rem; border-color:#3b82f6;">
+          <input type="text" class="form-input" id="cmd-palette-input" placeholder="Tastați orice cod FoxPro (LAR, LAF, CHI, CHO, SUM, TCE, CRE, TRE, GOL, SLU, RE1, SBL, CCA...)" oninput="renderCommandPaletteResults(this.value)" onkeydown="onCommandPaletteKeyDown(event)" autocomplete="off" style="font-size:1rem; border-color:#3b82f6; min-width:0; flex:1;">
           <button class="modal-close" onclick="closeModal('modal-command-palette')">&times;</button>
         </div>
       </div>

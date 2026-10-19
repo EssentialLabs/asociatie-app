@@ -128,10 +128,37 @@ function syncSidebarViewportHeight() {
 }
 window.syncSidebarViewportHeight = syncSidebarViewportHeight;
 
+function toggleMobileSidebar(forceState) {
+  const sidebar = document.querySelector('.sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const toggleBtn = document.getElementById('mobile-nav-toggle');
+  const isCurrentlyOpen = document.body.classList.contains('sidebar-open');
+  const shouldOpen = typeof forceState === 'boolean' ? forceState : !isCurrentlyOpen;
+
+  if (shouldOpen) {
+    document.body.classList.add('sidebar-open');
+    if (sidebar) sidebar.classList.add('open');
+    if (backdrop) backdrop.classList.add('active');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'true');
+  } else {
+    document.body.classList.remove('sidebar-open');
+    if (sidebar) sidebar.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('active');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+  }
+}
+window.toggleMobileSidebar = toggleMobileSidebar;
+
+function closeMobileSidebar() {
+  toggleMobileSidebar(false);
+}
+window.closeMobileSidebar = closeMobileSidebar;
+
 // ============================================================
 //  INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+  document.body.setAttribute('data-active-section', 'blocuri');
   initAuth();
   loadAsociatiiWorkspaces();
   loadPerioadeGlobal();
@@ -139,13 +166,29 @@ document.addEventListener('DOMContentLoaded', () => {
   loadDashboard();
   syncSidebarViewportHeight();
 
-  window.addEventListener('resize', syncSidebarViewportHeight);
+  const handleViewportResize = () => {
+    syncSidebarViewportHeight();
+    if (window.innerWidth > 768 && document.body.classList.contains('sidebar-open')) {
+      closeMobileSidebar();
+    }
+  };
+  window.addEventListener('resize', handleViewportResize);
+  window.addEventListener('orientationchange', handleViewportResize);
   window.addEventListener('scroll', syncSidebarViewportHeight, { passive: true });
 
   // Initializare Routing URL Hash (#blocuri, #avizier, #rapoarte/LAF, etc.)
   window.addEventListener('hashchange', () => navigateFromHash());
   window.addEventListener('popstate', () => navigateFromHash());
   navigateFromHash();
+
+  // Click pe fundalul întunecat al ferestrelor modale pentru închidere facilă
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        closeModal(overlay.id);
+      }
+    });
+  });
 
   // Auto-calculate consum pe contoare generale
   ['ar', 'ac', 'in'].forEach(type => {
@@ -183,16 +226,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Global Keyboard Shortcut: Ctrl+K / Cmd+K for 58-Operation Command Palette
+  // Global Keyboard Shortcut: Ctrl+K / Cmd+K for 58-Operation Command Palette & Escape for Dialogs
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       openCommandPalette();
     } else if (e.key === 'Escape') {
-      const cmdModal = document.getElementById('modal-command-palette');
-      if (cmdModal && cmdModal.style.display === 'flex') {
-        closeModal('modal-command-palette');
+      if (document.body.classList.contains('sidebar-open')) {
+        closeMobileSidebar();
       }
+      document.querySelectorAll('.modal-overlay').forEach(overlay => {
+        if (overlay.style.display === 'flex' || overlay.style.display === 'block') {
+          closeModal(overlay.id);
+        }
+      });
     }
   });
 });
@@ -468,6 +515,8 @@ function navigateFromHash() {
 function switchMainSection(section, updateHistory = true) {
   if (section === 'chitante') section = 'casierie';
   activeSection = section;
+  closeMobileSidebar();
+  document.body.setAttribute('data-active-section', section);
 
   // Actualizare URL în bara de adrese a browserului pentru suport "Back / Forward" și link-uri unice per pagină
   if (updateHistory) {
@@ -484,6 +533,11 @@ function switchMainSection(section, updateHistory = true) {
   document.querySelectorAll('.top-nav-btn').forEach(btn => btn.classList.remove('active'));
   const btn = document.getElementById(`nav-btn-${section}`);
   if (btn) btn.classList.add('active');
+
+  // Actualizare butoane meniu sidebar mobil
+  document.querySelectorAll('.sidebar-nav-btn').forEach(b => {
+    b.classList.toggle('active', b.id === `side-nav-${section}`);
+  });
 
   // Sincronizare stepper
   const stageMap = {
@@ -568,6 +622,8 @@ function renderAuthUI() {
 
   const isSuper = (currentUser.role === 'superadmin');
   if (ctBtn) ctBtn.style.display = (isSuper || isImpersonating) ? 'flex' : 'none';
+  const sideCtBtn = document.getElementById('side-nav-control-tower');
+  if (sideCtBtn) sideCtBtn.style.display = (isSuper || isImpersonating) ? 'flex' : 'none';
 
   if (isImpersonating) {
     if (impBanner) impBanner.style.display = 'block';
@@ -974,6 +1030,10 @@ async function loadBlocuri() {
 }
 
 function showDashboard() {
+  closeMobileSidebar();
+  if (activeSection !== 'blocuri') {
+    switchMainSection('blocuri');
+  }
   currentBlocId = null;
   currentBloc = null;
   const dash = document.getElementById('dashboard-page');
@@ -984,6 +1044,10 @@ function showDashboard() {
 }
 
 async function selectBloc(id) {
+  closeMobileSidebar();
+  if (activeSection !== 'blocuri') {
+    switchMainSection('blocuri');
+  }
   currentBlocId = id;
   currentBloc = await apiGet(`/api/blocuri/${id}`);
   apartamenteCache = await apiGet(`/api/blocuri/${id}/apartamente`);
@@ -1009,6 +1073,7 @@ async function selectBloc(id) {
 }
 
 function showAddBlocModal() {
+  closeMobileSidebar();
   document.getElementById('new-bloc-nr').value = '';
   document.getElementById('new-bloc-strada').value = '';
   document.getElementById('new-bloc-numar').value = '';
@@ -3583,6 +3648,7 @@ function switchTab(tabName, tabBtn) {
 }
 
 function showModal(id) {
+  closeMobileSidebar();
   const m = document.getElementById(id);
   if (m) m.style.display = 'flex';
 }
@@ -3600,7 +3666,15 @@ function showAlert(message, type = 'info') {
   alertDiv.style.right = '1.5rem';
   alertDiv.style.zIndex = '9999';
   alertDiv.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)';
-  alertDiv.style.minWidth = '300px';
+  alertDiv.style.minWidth = '280px';
+  alertDiv.style.maxWidth = 'calc(100vw - 2rem)';
+  alertDiv.style.boxSizing = 'border-box';
+  alertDiv.style.wordBreak = 'break-word';
+  if (typeof window !== 'undefined' && window.innerWidth <= 480) {
+    alertDiv.style.left = '1rem';
+    alertDiv.style.right = '1rem';
+    alertDiv.style.minWidth = '0';
+  }
   alertDiv.innerHTML = `<strong>${type === 'success' ? '✅ Succes: ' : type === 'warning' ? '⚠️ Atenție: ' : 'ℹ️ Info: '}</strong> ${message}`;
 
   document.body.appendChild(alertDiv);
@@ -4123,13 +4197,15 @@ function renderAdeverintaContent(adv) {
       ${adv.are_datorii ? `
         <div style="margin:1rem 0; border:1px solid #cbd5e1; background:#f8fafc; padding:0.85rem; border-radius:4px;">
           <strong>Situația debitelor defalcate la data de ${adv.data_inregistrarii}:</strong>
-          <table style="width:100%; border-collapse:collapse; margin-top:0.5rem; font-size:0.95rem;">
-            <tr><td style="padding:4px;">1. Întreținere / Regie (R):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.intretinere_regie)} RON</td></tr>
-            <tr><td style="padding:4px;">2. Fond de Rulment (F):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.fond_rulment)} RON</td></tr>
-            <tr><td style="padding:4px;">3. Fond de Reparații (A):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.fond_reparatii)} RON</td></tr>
-            <tr><td style="padding:4px;">4. Penalități de întârziere:</td><td style="text-align:right; font-weight:700;">${formatMoney(d.penalitati_inregistrate + d.penalitati_calculate)} RON</td></tr>
-            <tr style="border-top:1px solid #94a3b8; font-weight:700;"><td style="padding:4px;">TOTAL GENERAL DATORAT:</td><td style="text-align:right; color:#dc2626;">${formatMoney(d.total_datorat)} RON</td></tr>
-          </table>
+          <div class="table-container" style="margin-top:0.5rem; margin-bottom:0;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.95rem;">
+              <tr><td style="padding:4px;">1. Întreținere / Regie (R):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.intretinere_regie)} RON</td></tr>
+              <tr><td style="padding:4px;">2. Fond de Rulment (F):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.fond_rulment)} RON</td></tr>
+              <tr><td style="padding:4px;">3. Fond de Reparații (A):</td><td style="text-align:right; font-weight:700;">${formatMoney(d.fond_reparatii)} RON</td></tr>
+              <tr><td style="padding:4px;">4. Penalități de întârziere:</td><td style="text-align:right; font-weight:700;">${formatMoney(d.penalitati_inregistrate + d.penalitati_calculate)} RON</td></tr>
+              <tr style="border-top:1px solid #94a3b8; font-weight:700;"><td style="padding:4px;">TOTAL GENERAL DATORAT:</td><td style="text-align:right; color:#dc2626;">${formatMoney(d.total_datorat)} RON</td></tr>
+            </table>
+          </div>
         </div>
       ` : ''}
 
